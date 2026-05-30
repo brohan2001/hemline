@@ -1,16 +1,22 @@
 {
   "manifest_version": 3,
   "name": "JSeek Enhancer",
-  "version": "1.0.0",
-  "description": "Personalizes and automates interactions on jseek.co: resume tailoring, seniority filtering, H1-B badges, and LinkedIn recruiter search.",
-  "permissions": ["activeTab", "downloads", "storage"],
+  "version": "1.1.0",
+  "description": "Personalizes and automates interactions on jseek.co, LinkedIn, and Jobright: resume tailoring, cold messages, H1-B badges, and more.",
+  "permissions": ["activeTab", "downloads", "storage", "clipboardWrite"],
   "host_permissions": [
     "http://localhost:4567/*",
-    "https://jseek.co/*"
+    "https://jseek.co/*",
+    "https://*.linkedin.com/*",
+    "https://*.jobright.ai/*"
   ],
   "content_scripts": [
     {
-      "matches": ["https://jseek.co/*"],
+      "matches": [
+        "https://jseek.co/*",
+        "https://*.linkedin.com/*",
+        "https://*.jobright.ai/*"
+      ],
       "js": ["content_script.js"],
       "run_at": "document_idle"
     }

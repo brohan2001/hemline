@@ -1,14 +1,56 @@
-// ─── DOM Selectors ────────────────────────────────────────────────────────────
-// Verified against live jseek.co DevTools — update if the site's Tailwind classes change.
-const SEL = {
-  jobDescription:      'div.job-description',
-  jobCards:            'div.relative.flex.items-center.gap-3.rounded-md.px-2.py-2[class*="[contain:layout]"]',
-  jobTitle:            'span.min-w-0.flex-1.truncate.text-sm',
-  companyName:         'span.shrink-0.text-xs.text-muted',
-  filterSidebar:       'div.space-y-4.rounded-lg.border.border-border-soft.bg-surface.p-4',
-  filterTagPills:      'div.space-y-3',
-  drawerCompanyHeader: 'div.flex.items-center.gap-3:has(a[href*="/company/"])',
-  drawerJobTitle:      'h2.text-xl, h2.text-lg, h1',
+// ─── Site Configs ─────────────────────────────────────────────────────────────
+// jseek.co selectors verified against live DevTools — update if Tailwind classes change.
+// LinkedIn/Jobright selectors are best-guess based on known DOM patterns; verify in DevTools.
+const SITE_CONFIGS = {
+  jseek: {
+    slug:                'jseek',
+    jobDescription:      'div.job-description',
+    jobCards:            'div.relative.flex.items-center.gap-3.rounded-md.px-2.py-2[class*="[contain:layout]"]',
+    jobTitle:            'span.min-w-0.flex-1.truncate.text-sm',
+    companyName:         'span.shrink-0.text-xs.text-muted',
+    filterSidebar:       'div.space-y-4.rounded-lg.border.border-border-soft.bg-surface.p-4',
+    filterTagPills:      'div.space-y-3',
+    drawerCompanyHeader: 'div.flex.items-center.gap-3:has(a[href*="/company/"])',
+    drawerJobTitle:      'h2.text-xl, h2.text-lg, h1',
+    injectTarget:        'div.job-description',
+    injectPosition:      'beforebegin',
+  },
+  linkedin: {
+    slug:                'linkedin',
+    jobDescription:      '#job-details',
+    jobCards:            null,
+    jobTitle:            '.job-details-jobs-unified-top-card__job-title h1',
+    companyName:         '.job-details-jobs-unified-top-card__company-name',
+    filterSidebar:       null,
+    filterTagPills:      null,
+    drawerCompanyHeader: null,
+    drawerJobTitle:      null,
+    injectTarget:        '#job-details',
+    injectPosition:      'beforebegin',
+  },
+  jobright: {
+    slug:                'jobright',
+    jobDescription:      '[data-testid="job-description"]',
+    jobCards:            null,
+    jobTitle:            '[data-testid="job-title"], h1',
+    companyName:         '[data-testid="company-name"], .company-name',
+    filterSidebar:       null,
+    filterTagPills:      null,
+    drawerCompanyHeader: null,
+    drawerJobTitle:      null,
+    injectTarget:        '[data-testid="job-description"]',
+    injectPosition:      'beforebegin',
+  },
+}
+
+let activeCfg = null
+
+function detectSite() {
+  const host = window.location.hostname
+  if (host.includes('jseek.co'))     return SITE_CONFIGS.jseek
+  if (host.includes('linkedin.com')) return SITE_CONFIGS.linkedin
+  if (host.includes('jobright.ai'))  return SITE_CONFIGS.jobright
+  return null
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -107,13 +149,19 @@ injectStyle(`
 `)
 
 // ─── Feature 1: Action Buttons (Resume / Resume & CL) ────────────────────────
-function getDrawerContext() {
-  const drawerHeader = findFirst(SEL.drawerCompanyHeader)
-  const anchor = drawerHeader?.querySelector('a[href*="/company/"]')
-  const companyName = anchor?.textContent.trim() ?? ''
-  const titleEl = findFirst(SEL.drawerJobTitle)
-  const jobTitle = titleEl?.textContent.trim() ?? ''
-  return { companyName, jobTitle }
+function getDrawerContext(cfg) {
+  if (cfg.drawerCompanyHeader) {
+    const drawerHeader = findFirst(cfg.drawerCompanyHeader)
+    const anchor = drawerHeader?.querySelector('a[href*="/company/"]')
+    return {
+      companyName: anchor?.textContent.trim() ?? '',
+      jobTitle:    findFirst(cfg.drawerJobTitle)?.textContent.trim() ?? '',
+    }
+  }
+  return {
+    companyName: findFirst(cfg.companyName)?.textContent.trim() ?? '',
+    jobTitle:    findFirst(cfg.jobTitle)?.textContent.trim() ?? '',
+  }
 }
 
 function sanitizeForFilename(name) {
@@ -150,36 +198,43 @@ function makePillButton(text, tooltip) {
   return btn
 }
 
-function injectActionButtons() {
+function injectActionButtons(cfg) {
   if (document.getElementById('jseek-btn-row')) return
 
-  const jdEl = findFirst(SEL.jobDescription)
+  const jdEl = findFirst(cfg.jobDescription)
   if (!jdEl) return
 
   const wrapper = document.createElement('div')
   wrapper.id = 'jseek-btn-row'
   wrapper.className = 'jseek-btn-row'
 
-  const btnResume = makePillButton('Resume', 'Tailor Resume')
-  const btnBoth   = makePillButton('Resume & CL', 'Tailor Resume & Cover Letter')
+  const btnResume  = makePillButton('Resume', 'Tailor Resume')
+  const btnBoth    = makePillButton('Resume & CL', 'Tailor Resume & Cover Letter')
+  const btnMessage = makePillButton('Message', 'Generate LinkedIn Recruiter Outreach')
 
-  function setBusy(busy, label = '') {
-    btnResume.disabled = busy
-    btnBoth.disabled   = busy
-    if (label) btnResume.textContent = label
+  function setBusy(busy) {
+    btnResume.disabled  = busy
+    btnBoth.disabled    = busy
+    btnMessage.disabled = busy
   }
 
-  function setBothBusy(busy, label = '') {
-    btnResume.disabled = busy
-    btnBoth.disabled   = busy
-    if (label) btnBoth.textContent = label
+  function setBothBusy(busy) {
+    btnResume.disabled  = busy
+    btnBoth.disabled    = busy
+    btnMessage.disabled = busy
+  }
+
+  function setAllBusy(busy) {
+    btnResume.disabled  = busy
+    btnBoth.disabled    = busy
+    btnMessage.disabled = busy
   }
 
   btnResume.addEventListener('click', async () => {
     const jobDescription = jdEl.innerText.trim()
     if (!jobDescription) { alert('JSeek Enhancer: no job description found.'); return }
 
-    const { companyName, jobTitle } = getDrawerContext()
+    const { companyName, jobTitle } = getDrawerContext(cfg)
     const safe = sanitizeForFilename(companyName)
 
     const t0 = performance.now()
@@ -208,7 +263,7 @@ function injectActionButtons() {
     const jobDescription = jdEl.innerText.trim()
     if (!jobDescription) { alert('JSeek Enhancer: no job description found.'); return }
 
-    const { companyName, jobTitle } = getDrawerContext()
+    const { companyName, jobTitle } = getDrawerContext(cfg)
     const safe = sanitizeForFilename(companyName)
 
     const t0 = performance.now()
@@ -237,9 +292,50 @@ function injectActionButtons() {
     }
   })
 
+  btnMessage.addEventListener('click', async () => {
+    const jd = findFirst(cfg.jobDescription)?.innerText.trim()
+    if (!jd) { alert('JSeek Enhancer: no job description found.'); return }
+
+    const { companyName, jobTitle } = getDrawerContext(cfg)
+
+    const t0 = performance.now()
+    let timerInterval = setInterval(() => {
+      btnMessage.textContent = `Writing… ${((performance.now() - t0) / 1000).toFixed(1)}s`
+    }, 200)
+    setAllBusy(true)
+    try {
+      const resp = await fetch(`${SERVER}/cold-message`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jd, companyName, jobTitle }),
+      })
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ error: resp.statusText }))
+        throw new Error(err.error ?? resp.statusText)
+      }
+      const { message } = await resp.json()
+      clearInterval(timerInterval); timerInterval = null
+      await navigator.clipboard.writeText(message)
+      if (companyName) {
+        const q = encodeURIComponent(`recruiter AND "${companyName}"`)
+        window.open(`https://www.linkedin.com/search/results/people/?keywords=${q}`, '_blank', 'noopener')
+      }
+      btnMessage.textContent = 'Copied ✓'
+      setTimeout(() => { btnMessage.textContent = 'Message' }, 3000)
+    } catch (err) {
+      clearInterval(timerInterval); timerInterval = null
+      alert(`JSeek Enhancer: ${err.message}`)
+      btnMessage.textContent = 'Message'
+    } finally {
+      clearInterval(timerInterval)
+      setAllBusy(false)
+    }
+  })
+
   wrapper.appendChild(btnResume)
   wrapper.appendChild(btnBoth)
-  jdEl.insertAdjacentElement('beforebegin', wrapper)
+  wrapper.appendChild(btnMessage)
+  findFirst(cfg.injectTarget)?.insertAdjacentElement(cfg.injectPosition, wrapper)
 }
 
 // ─── Feature 2: Enhanced Seniority Filter ────────────────────────────────────
@@ -259,8 +355,8 @@ function injectSeniorityFilter(sidebar) {
 }
 
 function applySeniorityFilter() {
-  findAll(SEL.jobCards).forEach(card => {
-    const titleEl = findFirst(SEL.jobTitle, card)
+  findAll(activeCfg.jobCards).forEach(card => {
+    const titleEl = findFirst(activeCfg.jobTitle, card)
     const title = titleEl?.textContent ?? ''
 
     if (!seniorityFilterActive) {
@@ -278,7 +374,7 @@ function applySeniorityFilter() {
 
 // ─── Feature 3: H1-B Badges & Filter ─────────────────────────────────────────
 function injectH1bBadges() {
-  findAll(SEL.companyName).forEach(el => {
+  findAll(activeCfg.companyName).forEach(el => {
     if (el.querySelector('.jseek-h1b-badge')) return
 
     const company = el.textContent.trim()
@@ -317,13 +413,13 @@ function injectH1bFilter(sidebar) {
 }
 
 function applyH1bFilter() {
-  findAll(SEL.jobCards).forEach(card => {
+  findAll(activeCfg.jobCards).forEach(card => {
     if (!h1bFilterActive) {
       if (!seniorityFilterActive) card.classList.remove('jseek-hidden')
       return
     }
 
-    const companyEl = findFirst(SEL.companyName, card)
+    const companyEl = findFirst(activeCfg.companyName, card)
     const company = companyEl?.textContent.trim() ?? ''
     const count = lookupH1b(company)
 
@@ -337,7 +433,7 @@ function applyH1bFilter() {
 
 // ─── Feature 4: LinkedIn Recruiter Finder ────────────────────────────────────
 function injectLinkedInButtons() {
-  findAll(SEL.companyName).forEach(el => {
+  findAll(activeCfg.companyName).forEach(el => {
     if (el.querySelector('.jseek-li-btn')) return
 
     const company = el.textContent.replace(/H1-B:.*$/i, '').trim()
@@ -366,7 +462,7 @@ function injectLinkedInButtons() {
 // The drawer reuses the same DOM element across jobs, so we key on company name
 // to detect job changes and re-inject fresh badges/buttons.
 function injectDrawerEnhancements() {
-  const drawerHeader = findFirst(SEL.drawerCompanyHeader)
+  const drawerHeader = findFirst(activeCfg.drawerCompanyHeader)
   if (!drawerHeader) return
 
   const anchor = drawerHeader.querySelector('a[href*="/company/"]')
@@ -416,33 +512,42 @@ async function loadH1bData() {
   }
 }
 
-function runFeatures() {
-  const sidebarContainer = findFirst(SEL.filterSidebar)
-  const sidebarPills = sidebarContainer
-    ? findFirst(SEL.filterTagPills, sidebarContainer)
-    : null
+function runFeatures(cfg) {
+  injectActionButtons(cfg)
 
-  injectActionButtons()
-  injectH1bBadges()
-  injectLinkedInButtons()
-  injectDrawerEnhancements()
+  if (cfg.slug === 'jseek') {
+    const sidebarContainer = findFirst(cfg.filterSidebar)
+    const sidebarPills = sidebarContainer
+      ? findFirst(cfg.filterTagPills, sidebarContainer)
+      : null
 
-  if (sidebarPills) {
-    injectSeniorityFilter(sidebarPills)
-    injectH1bFilter(sidebarPills)
+    injectH1bBadges()
+    injectLinkedInButtons()
+    injectDrawerEnhancements()
+
+    if (sidebarPills) {
+      injectSeniorityFilter(sidebarPills)
+      injectH1bFilter(sidebarPills)
+    }
   }
 }
 
 async function init() {
-  await loadH1bData()
-  runFeatures()
+  const cfg = detectSite()
+  if (!cfg) return
+
+  activeCfg = cfg
+
+  if (cfg.slug === 'jseek') await loadH1bData()
+
+  runFeatures(cfg)
 
   // Re-run on dynamic page updates (SPA navigation, drawer open/close, infinite scroll).
   // Debounced to avoid hammering DOM queries on rapid mutations.
   let runTimer = null
   const observer = new MutationObserver(() => {
     clearTimeout(runTimer)
-    runTimer = setTimeout(runFeatures, 150)
+    runTimer = setTimeout(() => runFeatures(cfg), 150)
   })
   observer.observe(document.body, { childList: true, subtree: true })
 }
