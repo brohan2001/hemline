@@ -1,0 +1,9 @@
+node_modules/
+resumes/*.pdf
+resumes/*.aux
+resumes/*.log
+resumes/*.out
+.env
+resumes/current_job.txt
+resumes/Rohan_CL_*.tex
+resumes/applied_jobs.json

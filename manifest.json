@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "JSeek Enhancer",
+  "version": "1.0.0",
+  "description": "Personalizes and automates interactions on jseek.co: resume tailoring, seniority filtering, H1-B badges, and LinkedIn recruiter search.",
+  "permissions": ["activeTab", "downloads", "storage"],
+  "host_permissions": [
+    "http://localhost:4567/*",
+    "https://jseek.co/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://jseek.co/*"],
+      "js": ["content_script.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["h1b_data.json"],
+      "matches": ["https://jseek.co/*"]
+    }
+  ]
+}
