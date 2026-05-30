@@ -182,17 +182,24 @@ function injectActionButtons() {
     const { companyName, jobTitle } = getDrawerContext()
     const safe = sanitizeForFilename(companyName)
 
-    setBusy(true, 'Tailoring…')
+    const t0 = performance.now()
+    let timerInterval = setInterval(() => {
+      btnResume.textContent = `Tailoring… ${((performance.now() - t0) / 1000).toFixed(1)}s`
+    }, 200)
+    setBusy(true)
     try {
       const blob    = await callEndpoint('/tailor', { jobDescription, companyName, jobTitle })
       const dataUrl = await blobToDataUrl(blob)
       chrome.runtime.sendMessage({ type: 'DOWNLOAD_PDF', dataUrl, filename: `Rohan_Resume_${safe}.pdf` })
-      btnResume.textContent = 'Downloaded ✓'
+      clearInterval(timerInterval); timerInterval = null
+      btnResume.textContent = `Resume Downloaded ✓ (${((performance.now() - t0) / 1000).toFixed(1)}s)`
       setTimeout(() => { btnResume.textContent = 'Resume' }, 3000)
     } catch (err) {
+      clearInterval(timerInterval); timerInterval = null
       alert(`JSeek Enhancer: ${err.message}`)
       btnResume.textContent = 'Resume'
     } finally {
+      clearInterval(timerInterval)
       setBusy(false)
     }
   })
@@ -204,7 +211,11 @@ function injectActionButtons() {
     const { companyName, jobTitle } = getDrawerContext()
     const safe = sanitizeForFilename(companyName)
 
-    setBothBusy(true, 'Generating…')
+    const t0 = performance.now()
+    let timerInterval = setInterval(() => {
+      btnBoth.textContent = `Writing CL… ${((performance.now() - t0) / 1000).toFixed(1)}s`
+    }, 200)
+    setBothBusy(true)
     try {
       const [resumeBlob, clBlob] = await Promise.all([
         callEndpoint('/tailor', { jobDescription, companyName, jobTitle }),
@@ -213,13 +224,15 @@ function injectActionButtons() {
       const [resumeDataUrl, clDataUrl] = await Promise.all([blobToDataUrl(resumeBlob), blobToDataUrl(clBlob)])
       chrome.runtime.sendMessage({ type: 'DOWNLOAD_PDF', dataUrl: resumeDataUrl, filename: `Rohan_Resume_${safe}.pdf` })
       chrome.runtime.sendMessage({ type: 'DOWNLOAD_PDF', dataUrl: clDataUrl, filename: `Rohan_CL_${safe}.pdf` })
-
-      btnBoth.textContent = 'Both Downloaded ✓'
+      clearInterval(timerInterval); timerInterval = null
+      btnBoth.textContent = `Both Downloaded ✓ (${((performance.now() - t0) / 1000).toFixed(1)}s total)`
       setTimeout(() => { btnBoth.textContent = 'Resume & CL' }, 3000)
     } catch (err) {
+      clearInterval(timerInterval); timerInterval = null
       alert(`JSeek Enhancer: ${err.message}`)
       btnBoth.textContent = 'Resume & CL'
     } finally {
+      clearInterval(timerInterval)
       setBothBusy(false)
     }
   })
