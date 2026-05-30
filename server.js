@@ -17,6 +17,7 @@ const execFileAsync = promisify(execFile)
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const PORT = 4567
 const RESUMES_DIR = path.join(__dirname, 'resumes')
+const LEDGER_PATH = path.join(RESUMES_DIR, 'applied_jobs.json')
 
 let claudePath = 'claude'
 if (process.env.NODE_ENV !== 'test') {
@@ -111,6 +112,37 @@ LaTeX formatting rules (strictly follow these):
 Output the complete final LaTeX document to stdout. Output ONLY the raw LaTeX — no explanation, no markdown fences, no commentary.`
 }
 
+function buildColdMessagePrompt(jd, companyName, jobTitle, sweTex) {
+  return `You are writing a LinkedIn connection request message for Rohan Balasubramanian.
+Output ONLY the message text — no explanation, no quotes, no preamble, no markdown.
+
+Here is Rohan's resume for context:
+<swe_tex>
+${sweTex}
+</swe_tex>
+
+Target role: "${jobTitle}" at "${companyName}".
+Job description:
+<job_description>
+${jd.trim()}
+</job_description>
+
+Write exactly 4 sentences. Count the total characters carefully — the combined character count of all 4 sentences must be strictly under 300 characters.
+
+Connect one specific technical theme from Rohan's GRA work (SadTalker lip-sync, NeMo TTS pipelines, CUDA/GPU optimization) or his projects (Predicare, Constrained Text Generation, Auto Vision) directly to a concrete challenge stated in the job description.
+
+STRICT ANTI-AI STYLE RULES (DO NOT VIOLATE):
+1. Senior professor register — dry, authoritative, empirical. No flowery adjectives.
+2. No negation framing. State what Rohan did; do not define by contrast.
+3. No evaluative labeling. Trust the reader to draw conclusions.
+4. Indirect speech only. No direct quotation marks.
+5. Banned words: delve, foster, underscore, landscape, tapestry, testament, pivotal, invaluable, unwavering, commendable, meticulous, seamlessly, intersection, realm, prowess.
+6. No em dashes.
+7. Do not start with "I".
+
+Output ONLY the message. Nothing else.`
+}
+
 function sep(label) {
   const bar = '='.repeat(64)
   console.log(`\n${bar}\n=== DEBUG: ${label} ===\n${bar}`)
@@ -150,6 +182,17 @@ async function readSkillFiles() {
       .map(async f => [f, await fs.readFile(path.join(RESUMES_DIR, f), 'utf8')])
   )
   return Object.fromEntries(entries)
+}
+
+async function appendLedger(entry) {
+  let entries = []
+  try {
+    const raw = await fs.readFile(LEDGER_PATH, 'utf8')
+    const parsed = JSON.parse(raw)
+    if (Array.isArray(parsed)) entries = parsed
+  } catch { /* file missing or malformed — start fresh */ }
+  entries.push(entry)
+  await fs.writeFile(LEDGER_PATH, JSON.stringify(entries, null, 2), 'utf8')
 }
 
 // stdin is closed immediately to prevent a 3 s wait for piped input.
@@ -241,6 +284,13 @@ app.post('/tailor', async (req, res) => {
     res.setHeader('Content-Type', 'application/pdf')
     res.setHeader('Content-Disposition', `attachment; filename="Rohan_Resume_${safe}.pdf"`)
     res.send(pdfBuffer)
+    appendLedger({
+      company:    companyName,
+      title:      jobTitle,
+      date:       new Date().toISOString().slice(0, 10),
+      resumePath: `resumes/Rohan_Resume_${safe}.pdf`,
+      clPath:     null,
+    }).catch(err => console.error('appendLedger /tailor error:', err.message))
   } catch (err) {
     console.error('/tailor error:', err.message)
     res.status(500).json({ error: err.message })
@@ -305,13 +355,39 @@ app.post('/cover-letter', async (req, res) => {
     res.setHeader('Content-Type', 'application/pdf')
     res.setHeader('Content-Disposition', `attachment; filename="Rohan_CL_${safe}.pdf"`)
     res.send(pdfBuffer)
+    appendLedger({
+      company:    companyName,
+      title:      jobTitle,
+      date:       new Date().toISOString().slice(0, 10),
+      resumePath: null,
+      clPath:     `resumes/Rohan_CL_${safe}.pdf`,
+    }).catch(err => console.error('appendLedger /cover-letter error:', err.message))
   } catch (err) {
     console.error('/cover-letter error:', err.message)
     res.status(500).json({ error: err.message })
   }
 })
 
-export { app }
+app.post('/cold-message', async (req, res) => {
+  const { jd, companyName = '', jobTitle = '' } = req.body
+  if (!jd || typeof jd !== 'string' || jd.trim().length === 0) {
+    return res.status(400).json({ error: 'jd is required' })
+  }
+  try {
+    const sweTex = await fs.readFile(path.join(RESUMES_DIR, 'swe.tex'), 'utf8')
+    const { stdout } = await runClaude(
+      claudePath,
+      buildColdMessagePrompt(jd, companyName, jobTitle, sweTex),
+      __dirname
+    )
+    res.json({ message: stdout.trim() })
+  } catch (err) {
+    console.error('/cold-message error:', err.message)
+    res.status(500).json({ error: err.message })
+  }
+})
+
+export { app, appendLedger }
 
 const isMain = process.argv[1] === fileURLToPath(import.meta.url)
 if (isMain) {
