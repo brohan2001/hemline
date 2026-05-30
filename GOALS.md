@@ -4,11 +4,11 @@
 
 - [x] Step 1: Git init + .gitignore hygiene
 - [x] Step 2: GOALS.md task board
-- [ ] Step 3: Vitest + Supertest test infrastructure
-- [ ] Step 4: Performance timer on Resume and Resume+CL buttons
-- [ ] Step 5: Multi-site SITE_CONFIGS (LinkedIn + Jobright)
-- [ ] Step 6: Cold Message endpoint + Message button
-- [ ] Step 7: Application Tracker Ledger (applied_jobs.json)
+- [x] Step 3: Vitest + Supertest test infrastructure
+- [x] Step 4: Performance timer on Resume and Resume+CL buttons
+- [x] Step 5: Multi-site SITE_CONFIGS (LinkedIn + Jobright)
+- [x] Step 6: Cold Message endpoint + Message button
+- [x] Step 7: Application Tracker Ledger (applied_jobs.json)
 
 ## Success Definition
 
