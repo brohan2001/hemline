@@ -18,12 +18,14 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const PORT = 4567
 const RESUMES_DIR = path.join(__dirname, 'resumes')
 
-let claudePath
-try {
-  claudePath = execSync('which claude').toString().trim()
-} catch {
-  console.error('Warning: claude CLI not found on PATH. /tailor endpoint will fail.')
-  claudePath = 'claude'
+let claudePath = 'claude'
+if (process.env.NODE_ENV !== 'test') {
+  try {
+    claudePath = execSync('which claude').toString().trim()
+  } catch {
+    console.error('Warning: claude CLI not found on PATH. /tailor endpoint will fail.')
+    claudePath = 'claude'
+  }
 }
 
 function buildResumePrompt(jobDescription, sweTex, skills) {
@@ -309,7 +311,12 @@ app.post('/cover-letter', async (req, res) => {
   }
 })
 
-app.listen(PORT, '127.0.0.1', () => {
-  console.log(`JSeek Enhancer server running on http://127.0.0.1:${PORT}`)
-  console.log(`Claude CLI: ${claudePath}`)
-})
+export { app }
+
+const isMain = process.argv[1] === fileURLToPath(import.meta.url)
+if (isMain) {
+  app.listen(PORT, '127.0.0.1', () => {
+    console.log(`JSeek Enhancer server running on http://127.0.0.1:${PORT}`)
+    console.log(`Claude CLI: ${claudePath}`)
+  })
+}
