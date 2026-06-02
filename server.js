@@ -1,6 +1,8 @@
 import express from 'express'
 import cors from 'cors'
-import { execSync, execFile } from 'child_process'
+import { execSync, execFile, spawn } from 'child_process'
+import net from 'net'
+import { homedir } from 'os'
 import { promises as fs } from 'fs'
 import { fileURLToPath } from 'url'
 import path from 'path'
@@ -56,7 +58,7 @@ Update ONLY the Technical Skills section with these strict constraints:
 - Row 5 heading must be "Courses" and must span exactly 2 physical lines in the LaTeX source.
 - Pull skills from the skill pools that match keywords in the job description.
 - Add any critical missing skills explicitly required by the job description (e.g., Docker, Kubernetes) if not already present.
-- Every physical line of skills content (ignoring LaTeX markup like \\textbf{}, \\item, \\\\) must produce <= 105 characters of visible PDF text.
+- Every physical line of skills content (ignoring LaTeX markup like \\textbf{}, \\item, \\\\) must produce strictly between 60 and 105 characters of visible PDF text. If a line is too short, pack it with more relevant, matching keywords from the skill pools to maximize ATS keyword density, but do not exceed 105 characters.
 - Do not modify any other section.
 
 Output the complete modified swe.tex to stdout. Output ONLY the raw LaTeX — no explanation, no markdown fences, no commentary.`
@@ -169,7 +171,7 @@ function sanitizeFilename(name) {
 }
 
 async function cleanupPdflatex(basePath) {
-  for (const ext of ['.aux', '.log', '.out', '.pdf']) {
+  for (const ext of ['.aux', '.log', '.out']) {
     await fs.unlink(basePath + ext).catch(() => {})
   }
 }
@@ -197,8 +199,9 @@ async function appendLedger(entry) {
 
 // stdin is closed immediately to prevent a 3 s wait for piped input.
 function runClaude(bin, prompt, cwd) {
+  const modelArgs = process.env.CLAUDE_MODEL ? ['--model', process.env.CLAUDE_MODEL] : []
   return new Promise((resolve, reject) => {
-    const child = execFile(bin, ['-p', prompt, '--dangerously-skip-permissions'], {
+    const child = execFile(bin, ['-p', prompt, '--dangerously-skip-permissions', ...modelArgs], {
       cwd,
       timeout: 300_000,
       maxBuffer: 10 * 1024 * 1024,
@@ -214,6 +217,45 @@ function runClaude(bin, prompt, cwd) {
     })
     child.stdin.end()
   })
+}
+
+async function callRelay(prompt) {
+  const url = process.env.RELAY_URL || 'http://localhost:8000/v1/chat/completions'
+  const model = process.env.RELAY_MODEL || 'gemini-2.5-pro'
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model,
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.3,
+    }),
+  })
+  const data = await res.json()
+  return { stdout: data.choices[0].message.content, stderr: '' }
+}
+
+function checkPort(port) {
+  return new Promise((resolve) => {
+    const socket = new net.Socket()
+    socket.once('connect', () => { socket.destroy(); resolve(true) })
+    socket.once('error', () => { socket.destroy(); resolve(false) })
+    socket.connect(port, '127.0.0.1')
+  })
+}
+
+async function maybeSpawnRelay() {
+  if (process.env.LLM_PROVIDER !== 'relay') return
+  const relayDir = (process.env.RELAY_DIR || '/Users/rohanbalasubramanian/Documents/RelayFreeLLM')
+    .replace(/^~/, homedir())
+  const occupied = await checkPort(8000)
+  if (occupied) {
+    console.log('RelayFreeLLM is already running on port 8000. Connecting safely.')
+    return
+  }
+  console.log(`Spawning RelayFreeLLM from ${relayDir} ...`)
+  const relay = spawn('python3', ['-m', 'src.server'], { cwd: relayDir, stdio: 'inherit' })
+  relay.on('error', (err) => console.error('Failed to start RelayFreeLLM:', err.message))
 }
 
 const app = express()
@@ -233,6 +275,7 @@ app.post('/tailor', async (req, res) => {
   const pdfFile = path.join(RESUMES_DIR, 'swe.pdf')
 
   try {
+    const t0 = performance.now()
     sep('STAGE 1 — Scraped Job Description')
     console.log(`  Company        : ${companyName || '(not provided)'}`)
     console.log(`  Job Title      : ${jobTitle || '(not provided)'}`)
@@ -249,21 +292,28 @@ app.post('/tailor', async (req, res) => {
     console.log(extractSkillsSection(sweTex))
     console.log(`  Skill files  : ${Object.keys(skills).join(', ')}`)
 
-    sep('STAGE 3 — Claude Execution')
-    console.log(`  Binary : ${claudePath}`)
+    sep('STAGE 3 — LLM Execution')
+    const provider = req.body.provider || process.env.LLM_PROVIDER || 'claude'
+    console.log(`  Provider : ${provider}`)
+    if (provider !== 'relay') console.log(`  Binary   : ${claudePath}`)
+    const resumePrompt = buildResumePrompt(jobDescription, sweTex, skills)
+    const t1 = performance.now()
     let claudeResult
     try {
-      claudeResult = await runClaude(claudePath, buildResumePrompt(jobDescription, sweTex, skills), __dirname)
+      claudeResult = provider === 'relay'
+        ? await callRelay(resumePrompt)
+        : await runClaude(claudePath, resumePrompt, __dirname)
     } catch (claudeErr) {
-      console.log(`  Claude exited with error (code ${claudeErr.code}):`)
+      console.log(`  LLM exited with error (code ${claudeErr.code}):`)
       console.log(`  stdout: ${claudeErr.stdout || '(empty)'}`)
       console.log(`  stderr: ${claudeErr.stderr || '(empty)'}`)
       throw claudeErr
     }
-    console.log(`  Claude stderr: ${claudeResult.stderr || '(empty)'}`)
+    const t2 = performance.now()
+    console.log(`  LLM stderr: ${claudeResult.stderr || '(empty)'}`)
 
     const newTex = extractLatex(claudeResult.stdout)
-    if (!newTex) throw new Error(`Claude output did not contain valid LaTeX (stdout preview: ${claudeResult.stdout.slice(0, 300)})`)
+    if (!newTex) throw new Error(`LLM output did not contain valid LaTeX (stdout preview: ${claudeResult.stdout.slice(0, 300)})`)
     console.log(`  Output size  : ${newTex.length} bytes`)
     console.log('  Technical Skills section (after):')
     console.log(extractSkillsSection(newTex))
@@ -275,15 +325,22 @@ app.post('/tailor', async (req, res) => {
     const pdflatexArgs = ['-interaction=nonstopmode', `-output-directory=${RESUMES_DIR}`, texFile]
     console.log(`  Command: pdflatex ${pdflatexArgs.join(' ')}`)
     const latexResult = await execFileAsync('pdflatex', pdflatexArgs, { cwd: __dirname, timeout: 60_000 })
+    const t3 = performance.now()
     console.log(`  pdflatex stdout:\n${latexResult.stdout}`)
 
     sep('PIPELINE COMPLETE — sending PDF')
     const pdfBuffer = await fs.readFile(pdfFile)
     console.log(`  PDF size: ${pdfBuffer.length} bytes`)
-    await cleanupPdflatex(path.join(RESUMES_DIR, 'swe'))
     res.setHeader('Content-Type', 'application/pdf')
     res.setHeader('Content-Disposition', `attachment; filename="Rohan_Resume_${safe}.pdf"`)
     res.send(pdfBuffer)
+    const t4 = performance.now()
+    console.log('\n=== SPEED ANALYSIS ===')
+    console.log(`LLM Generation Latency: ${((t2 - t1) / 1000).toFixed(1)}s`)
+    console.log(`pdflatex Compilation Latency: ${((t3 - t2) / 1000).toFixed(1)}s`)
+    console.log(`Total Pipeline Request Duration: ${((t4 - t0) / 1000).toFixed(1)}s`)
+    console.log(`Active Provider: ${provider}`)
+    cleanupPdflatex(path.join(RESUMES_DIR, 'swe')).catch(() => {})
     appendLedger({
       company:    companyName,
       title:      jobTitle,
@@ -308,6 +365,7 @@ app.post('/cover-letter', async (req, res) => {
   const outPdf = path.join(RESUMES_DIR, `Rohan_CL_${safe}.pdf`)
 
   try {
+    const t0 = performance.now()
     sep('CL STAGE 1 — Request')
     console.log(`  Company   : ${companyName || '(not provided)'}`)
     console.log(`  Job Title : ${jobTitle || '(not provided)'}`)
@@ -324,21 +382,28 @@ app.post('/cover-letter', async (req, res) => {
     console.log(`  template size : ${clTemplate.length} bytes`)
     console.log(`  Skill files   : ${Object.keys(skills).join(', ')}`)
 
-    sep('CL STAGE 3 — Claude Execution')
-    console.log(`  Binary : ${claudePath}`)
+    sep('CL STAGE 3 — LLM Execution')
+    const clProvider = req.body.provider || process.env.LLM_PROVIDER || 'claude'
+    console.log(`  Provider : ${clProvider}`)
+    if (clProvider !== 'relay') console.log(`  Binary   : ${claudePath}`)
+    const clPrompt = buildClPrompt(jd, jobTitle, companyName, sweTex, clTemplate, skills)
+    const t1 = performance.now()
     let clResult
     try {
-      clResult = await runClaude(claudePath, buildClPrompt(jd, jobTitle, companyName, sweTex, clTemplate, skills), __dirname)
+      clResult = clProvider === 'relay'
+        ? await callRelay(clPrompt)
+        : await runClaude(claudePath, clPrompt, __dirname)
     } catch (claudeErr) {
-      console.log(`  Claude error (code ${claudeErr.code}):`)
+      console.log(`  LLM error (code ${claudeErr.code}):`)
       console.log(`  stdout: ${claudeErr.stdout || '(empty)'}`)
       console.log(`  stderr: ${claudeErr.stderr || '(empty)'}`)
       throw claudeErr
     }
-    console.log(`  Claude stderr: ${clResult.stderr || '(empty)'}`)
+    const t2 = performance.now()
+    console.log(`  LLM stderr: ${clResult.stderr || '(empty)'}`)
 
     const newTex = extractLatex(clResult.stdout)
-    if (!newTex) throw new Error(`Claude output did not contain valid LaTeX (stdout preview: ${clResult.stdout.slice(0, 300)})`)
+    if (!newTex) throw new Error(`LLM output did not contain valid LaTeX (stdout preview: ${clResult.stdout.slice(0, 300)})`)
     console.log(`  Output size : ${newTex.length} bytes`)
 
     sep('CL STAGE 4 — Writing .tex & Compilation')
@@ -346,15 +411,22 @@ app.post('/cover-letter', async (req, res) => {
     const pdflatexArgs = ['-interaction=nonstopmode', `-output-directory=${RESUMES_DIR}`, outTex]
     console.log(`  Command: pdflatex ${pdflatexArgs.join(' ')}`)
     const latexResult = await execFileAsync('pdflatex', pdflatexArgs, { cwd: __dirname, timeout: 60_000 })
+    const t3 = performance.now()
     console.log(`  pdflatex stdout:\n${latexResult.stdout}`)
 
     sep('CL PIPELINE COMPLETE — sending PDF')
     const pdfBuffer = await fs.readFile(outPdf)
     console.log(`  PDF size: ${pdfBuffer.length} bytes`)
-    await cleanupPdflatex(path.join(RESUMES_DIR, `Rohan_CL_${safe}`))
     res.setHeader('Content-Type', 'application/pdf')
     res.setHeader('Content-Disposition', `attachment; filename="Rohan_CL_${safe}.pdf"`)
     res.send(pdfBuffer)
+    const t4 = performance.now()
+    console.log('\n=== SPEED ANALYSIS ===')
+    console.log(`LLM Generation Latency: ${((t2 - t1) / 1000).toFixed(1)}s`)
+    console.log(`pdflatex Compilation Latency: ${((t3 - t2) / 1000).toFixed(1)}s`)
+    console.log(`Total Pipeline Request Duration: ${((t4 - t0) / 1000).toFixed(1)}s`)
+    console.log(`Active Provider: ${clProvider}`)
+    cleanupPdflatex(path.join(RESUMES_DIR, `Rohan_CL_${safe}`)).catch(() => {})
     appendLedger({
       company:    companyName,
       title:      jobTitle,
@@ -375,11 +447,11 @@ app.post('/cold-message', async (req, res) => {
   }
   try {
     const sweTex = await fs.readFile(path.join(RESUMES_DIR, 'swe.tex'), 'utf8')
-    const { stdout } = await runClaude(
-      claudePath,
-      buildColdMessagePrompt(jd, companyName, jobTitle, sweTex),
-      __dirname
-    )
+    const cmPrompt = buildColdMessagePrompt(jd, companyName, jobTitle, sweTex)
+    const cmProvider = req.body.provider || process.env.LLM_PROVIDER || 'claude'
+    const { stdout } = cmProvider === 'relay'
+      ? await callRelay(cmPrompt)
+      : await runClaude(claudePath, cmPrompt, __dirname)
     res.json({ message: stdout.trim() })
   } catch (err) {
     console.error('/cold-message error:', err.message)
@@ -391,8 +463,11 @@ export { app, appendLedger }
 
 const isMain = process.argv[1] === fileURLToPath(import.meta.url)
 if (isMain) {
-  app.listen(PORT, '127.0.0.1', () => {
-    console.log(`JSeek Enhancer server running on http://127.0.0.1:${PORT}`)
-    console.log(`Claude CLI: ${claudePath}`)
-  })
+  ;(async () => {
+    await maybeSpawnRelay()
+    app.listen(PORT, '127.0.0.1', () => {
+      console.log(`JSeek Enhancer server running on http://127.0.0.1:${PORT}`)
+      console.log(`Claude CLI: ${claudePath}`)
+    })
+  })()
 }

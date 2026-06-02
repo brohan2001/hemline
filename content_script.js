@@ -11,6 +11,13 @@ const LI_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" v
 let h1bData = {}
 let seniorityFilterActive = false
 let h1bFilterActive = false
+let llmProvider = 'claude'
+
+const JOB_STATES = {}
+
+function getJobId() {
+  return window.location.pathname.match(/\/jobs\/info\/([^/?#]+)/)?.[1] ?? window.location.pathname
+}
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 function injectStyle(css) {
@@ -39,7 +46,8 @@ function makeToggleButton(id, label) {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 injectStyle(`
   .jseek-btn-row {
-    display: inline-flex;
+    display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 6px;
     margin: 8px 0;
@@ -117,7 +125,7 @@ async function callEndpoint(endpoint, payload) {
   const resp = await fetch(`${SERVER}${endpoint}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ ...payload, provider: llmProvider }),
   })
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({ error: resp.statusText }))
@@ -149,6 +157,9 @@ function injectActionButtons(cfg) {
   const jdEl = findFirst(cfg.jobDescription)
   if (!jdEl) return
 
+  const jobId = getJobId()
+  const jobState = JOB_STATES[jobId] ?? {}
+
   const wrapper = document.createElement('div')
   wrapper.id = 'jseek-btn-row'
   wrapper.className = 'jseek-btn-row'
@@ -156,6 +167,10 @@ function injectActionButtons(cfg) {
   const btnResume  = makePillButton('Resume', 'Tailor Resume')
   const btnBoth    = makePillButton('Resume & CL', 'Tailor Resume & Cover Letter')
   const btnMessage = makePillButton('Message', 'Generate LinkedIn Recruiter Outreach')
+
+  if (jobState.resume === 'done') btnResume.textContent = `Resume Downloaded ✓ (${jobState.resumeElapsed}s)`
+  if (jobState.both === 'done') btnBoth.textContent = `Both Downloaded ✓ (${jobState.bothElapsed}s total)`
+  if (jobState.message === 'done') btnMessage.textContent = 'Copied ✓'
 
   function setBusy(busy) {
     btnResume.disabled  = busy
@@ -192,7 +207,9 @@ function injectActionButtons(cfg) {
       const dataUrl = await blobToDataUrl(blob)
       chrome.runtime.sendMessage({ type: 'DOWNLOAD_PDF', dataUrl, filename: `Rohan_Resume_${safe}.pdf` })
       clearInterval(timerInterval); timerInterval = null
-      btnResume.textContent = `Resume Downloaded ✓ (${((performance.now() - t0) / 1000).toFixed(1)}s)`
+      const elapsed = ((performance.now() - t0) / 1000).toFixed(1)
+      JOB_STATES[jobId] = { ...JOB_STATES[jobId], resume: 'done', resumeElapsed: elapsed }
+      btnResume.textContent = `Resume Downloaded ✓ (${elapsed}s)`
       setTimeout(() => { btnResume.textContent = 'Resume' }, 3000)
     } catch (err) {
       clearInterval(timerInterval); timerInterval = null
@@ -225,7 +242,9 @@ function injectActionButtons(cfg) {
       chrome.runtime.sendMessage({ type: 'DOWNLOAD_PDF', dataUrl: resumeDataUrl, filename: `Rohan_Resume_${safe}.pdf` })
       chrome.runtime.sendMessage({ type: 'DOWNLOAD_PDF', dataUrl: clDataUrl, filename: `Rohan_CL_${safe}.pdf` })
       clearInterval(timerInterval); timerInterval = null
-      btnBoth.textContent = `Both Downloaded ✓ (${((performance.now() - t0) / 1000).toFixed(1)}s total)`
+      const elapsed = ((performance.now() - t0) / 1000).toFixed(1)
+      JOB_STATES[jobId] = { ...JOB_STATES[jobId], both: 'done', bothElapsed: elapsed }
+      btnBoth.textContent = `Both Downloaded ✓ (${elapsed}s total)`
       setTimeout(() => { btnBoth.textContent = 'Resume & CL' }, 3000)
     } catch (err) {
       clearInterval(timerInterval); timerInterval = null
@@ -265,6 +284,7 @@ function injectActionButtons(cfg) {
         const q = encodeURIComponent(`recruiter AND "${companyName}"`)
         window.open(`https://www.linkedin.com/search/results/people/?keywords=${q}`, '_blank', 'noopener')
       }
+      JOB_STATES[jobId] = { ...JOB_STATES[jobId], message: 'done' }
       btnMessage.textContent = 'Copied ✓'
       setTimeout(() => { btnMessage.textContent = 'Message' }, 3000)
     } catch (err) {
@@ -376,6 +396,24 @@ function applyH1bFilter() {
   })
 }
 
+// ─── Feature 5: LLM Provider Toggle ──────────────────────────────────────────
+function injectLlmToggle(sidebar) {
+  if (document.getElementById('jseek-llm-toggle')) return
+
+  const btn = makeToggleButton('jseek-llm-toggle', llmProvider === 'relay' ? '⚡ LLM: Relay (Local)' : '⚡ LLM: Claude')
+  btn.title = 'Switch between Claude (remote) and RelayFreeLLM (local gateway)'
+  btn.dataset.active = String(llmProvider === 'relay')
+
+  btn.addEventListener('click', () => {
+    llmProvider = llmProvider === 'relay' ? 'claude' : 'relay'
+    btn.dataset.active = String(llmProvider === 'relay')
+    btn.textContent = llmProvider === 'relay' ? '⚡ LLM: Relay (Local)' : '⚡ LLM: Claude'
+    chrome.storage.local.set({ llmProvider })
+  })
+
+  sidebar.prepend(btn)
+}
+
 // ─── Feature 4: LinkedIn Recruiter Finder ────────────────────────────────────
 function injectLinkedInButtons() {
   findAll(activeCfg.companyName).forEach(el => {
@@ -473,6 +511,7 @@ function runFeatures(cfg) {
     if (sidebarPills) {
       injectSeniorityFilter(sidebarPills)
       injectH1bFilter(sidebarPills)
+      injectLlmToggle(sidebarPills)
     }
   }
 }
@@ -484,6 +523,13 @@ async function init() {
   activeCfg = cfg
 
   if (cfg.slug === 'jseek') await loadH1bData()
+
+  await new Promise(resolve => {
+    chrome.storage.local.get('llmProvider', ({ llmProvider: saved }) => {
+      if (saved) llmProvider = saved
+      resolve()
+    })
+  })
 
   runFeatures(cfg)
 
