@@ -166,6 +166,16 @@ function extractLatex(output) {
   return output.slice(start, end + '\\end{document}'.length)
 }
 
+// Replaces the LLM-generated preamble with the original one so models can never
+// corrupt \newcommand argument counts or package declarations.
+function graftPreamble(original, llmOutput) {
+  const MARKER = '\\begin{document}'
+  const origIdx = original.indexOf(MARKER)
+  const llmIdx = llmOutput.indexOf(MARKER)
+  if (origIdx === -1 || llmIdx === -1) return llmOutput
+  return original.slice(0, origIdx + MARKER.length) + llmOutput.slice(llmIdx + MARKER.length)
+}
+
 function sanitizeFilename(name) {
   return (name ?? '').replace(/[^a-zA-Z0-9\-]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '') || 'Company'
 }
@@ -229,6 +239,7 @@ async function callRelay(prompt) {
       model,
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.3,
+      max_tokens: 16384,
     }),
   })
   const data = await res.json()
@@ -312,8 +323,9 @@ app.post('/tailor', async (req, res) => {
     const t2 = performance.now()
     console.log(`  LLM stderr: ${claudeResult.stderr || '(empty)'}`)
 
-    const newTex = extractLatex(claudeResult.stdout)
-    if (!newTex) throw new Error(`LLM output did not contain valid LaTeX (stdout preview: ${claudeResult.stdout.slice(0, 300)})`)
+    const rawTex = extractLatex(claudeResult.stdout)
+    if (!rawTex) throw new Error(`LLM output did not contain valid LaTeX (stdout preview: ${claudeResult.stdout.slice(0, 300)})`)
+    const newTex = graftPreamble(sweTex, rawTex)
     console.log(`  Output size  : ${newTex.length} bytes`)
     console.log('  Technical Skills section (after):')
     console.log(extractSkillsSection(newTex))
@@ -324,7 +336,15 @@ app.post('/tailor', async (req, res) => {
     sep('STAGE 5 — pdflatex Compilation')
     const pdflatexArgs = ['-interaction=nonstopmode', `-output-directory=${RESUMES_DIR}`, texFile]
     console.log(`  Command: pdflatex ${pdflatexArgs.join(' ')}`)
-    const latexResult = await execFileAsync('pdflatex', pdflatexArgs, { cwd: __dirname, timeout: 60_000 })
+    let latexResult
+    try {
+      latexResult = await execFileAsync('pdflatex', pdflatexArgs, { cwd: __dirname, timeout: 60_000 })
+    } catch (pdfErr) {
+      console.error('  pdflatex FAILED. stdout:\n' + (pdfErr.stdout || '(empty)'))
+      console.error('  pdflatex stderr:\n' + (pdfErr.stderr || '(empty)'))
+      console.error(`  Failing .tex preserved at: ${texFile}`)
+      throw pdfErr
+    }
     const t3 = performance.now()
     console.log(`  pdflatex stdout:\n${latexResult.stdout}`)
 
@@ -402,15 +422,24 @@ app.post('/cover-letter', async (req, res) => {
     const t2 = performance.now()
     console.log(`  LLM stderr: ${clResult.stderr || '(empty)'}`)
 
-    const newTex = extractLatex(clResult.stdout)
-    if (!newTex) throw new Error(`LLM output did not contain valid LaTeX (stdout preview: ${clResult.stdout.slice(0, 300)})`)
+    const rawTex = extractLatex(clResult.stdout)
+    if (!rawTex) throw new Error(`LLM output did not contain valid LaTeX (stdout preview: ${clResult.stdout.slice(0, 300)})`)
+    const newTex = graftPreamble(clTemplate, rawTex)
     console.log(`  Output size : ${newTex.length} bytes`)
 
     sep('CL STAGE 4 — Writing .tex & Compilation')
     await fs.writeFile(outTex, newTex, 'utf8')
     const pdflatexArgs = ['-interaction=nonstopmode', `-output-directory=${RESUMES_DIR}`, outTex]
     console.log(`  Command: pdflatex ${pdflatexArgs.join(' ')}`)
-    const latexResult = await execFileAsync('pdflatex', pdflatexArgs, { cwd: __dirname, timeout: 60_000 })
+    let latexResult
+    try {
+      latexResult = await execFileAsync('pdflatex', pdflatexArgs, { cwd: __dirname, timeout: 60_000 })
+    } catch (pdfErr) {
+      console.error('  pdflatex FAILED. stdout:\n' + (pdfErr.stdout || '(empty)'))
+      console.error('  pdflatex stderr:\n' + (pdfErr.stderr || '(empty)'))
+      console.error(`  Failing .tex preserved at: ${outTex}`)
+      throw pdfErr
+    }
     const t3 = performance.now()
     console.log(`  pdflatex stdout:\n${latexResult.stdout}`)
 
