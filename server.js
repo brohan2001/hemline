@@ -54,11 +54,12 @@ ${jobDescription.trim()}
 Update ONLY the Technical Skills section with these strict constraints:
 - Exactly 5 skill headings total.
 - Row 1 heading must be "Languages".
-- Rows 2, 3, and 4: choose headings that best match the job description (e.g., "Frameworks", "Developer Tools", "Libraries", "Cloud & DevOps").
+- Rows 2, 3, and 4: choose headings that best match the job description (e.g., "Frameworks", "Developer Tools", "Libraries", "Cloud \\& DevOps").
 - Row 5 heading must be "Courses" and must span exactly 2 physical lines in the LaTeX source.
 - Pull skills from the skill pools that match keywords in the job description.
 - Add any critical missing skills explicitly required by the job description (e.g., Docker, Kubernetes) if not already present.
 - Every physical line of skills content (ignoring LaTeX markup like \\textbf{}, \\item, \\\\) must produce strictly between 60 and 105 characters of visible PDF text. If a line is too short, pack it with more relevant, matching keywords from the skill pools to maximize ATS keyword density, but do not exceed 105 characters.
+- CRITICAL: In LaTeX, the ampersand character & is a reserved alignment tab. Always write it as \\& inside \\textbf{} headings and skill content (e.g., \\textbf{Cloud \\& DevOps}, never \\textbf{Cloud & DevOps}).
 - Do not modify any other section.
 
 Output the complete modified swe.tex to stdout. Output ONLY the raw LaTeX — no explanation, no markdown fences, no commentary.`
@@ -164,6 +165,16 @@ function extractLatex(output) {
   const end = output.lastIndexOf('\\end{document}')
   if (start === -1 || end === -1) return null
   return output.slice(start, end + '\\end{document}'.length)
+}
+
+// Escapes any bare & in the Technical Skills section body that the LLM forgot to escape.
+function sanitizeSkillsAmpersands(tex) {
+  const start = tex.indexOf('\\section{Technical Skills}')
+  if (start === -1) return tex
+  const end = tex.indexOf('\\section{', start + 1)
+  const boundary = end === -1 ? tex.length : end
+  const skillsChunk = tex.slice(start, boundary).replace(/(?<!\\)&/g, '\\&')
+  return tex.slice(0, start) + skillsChunk + tex.slice(boundary)
 }
 
 // Replaces the LLM-generated preamble with the original one so models can never
@@ -325,7 +336,7 @@ app.post('/tailor', async (req, res) => {
 
     const rawTex = extractLatex(claudeResult.stdout)
     if (!rawTex) throw new Error(`LLM output did not contain valid LaTeX (stdout preview: ${claudeResult.stdout.slice(0, 300)})`)
-    const newTex = graftPreamble(sweTex, rawTex)
+    const newTex = sanitizeSkillsAmpersands(graftPreamble(sweTex, rawTex))
     console.log(`  Output size  : ${newTex.length} bytes`)
     console.log('  Technical Skills section (after):')
     console.log(extractSkillsSection(newTex))
