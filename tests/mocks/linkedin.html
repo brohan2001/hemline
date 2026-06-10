@@ -1,10 +1,16 @@
 <!DOCTYPE html>
 <html><body>
-  <a data-test-job-details-job-summary-info-company-name href="/company/acme">Acme Corp</a>
-  <div class="job-details-jobs-unified-top-card__job-title">
-    <h1 data-test-job-title>Senior Software Engineer</h1>
-  </div>
-  <div class="jobs-description-content__text">
-    <p>We are looking for an experienced engineer to join our team.</p>
+  <!-- Simulates LinkedIn's post-rename DOM: legacy exact classes are gone, so
+       only the [class*=...] substring fallbacks in site_configs.js can match. -->
+  <div class="job-details-module artdeco-card">
+    <div class="job-details-company-name-v2 inline-flex">
+      <a href="/company/acme">Acme Corp</a>
+    </div>
+    <div class="job-title-header-v2">
+      <h1>Senior Software Engineer</h1>
+    </div>
+    <div class="jobs-description-content-v3 t-14">
+      <p>We are looking for an experienced engineer to join our team.</p>
+    </div>
   </div>
 </body></html>

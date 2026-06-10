@@ -14,15 +14,17 @@ var SITE_CONFIGS = {
   },
   linkedin: {
     slug:                'linkedin',
-    jobDescription:      '#job-details, .jobs-description-content__text, .jobs-description__content, .jobs-description, article.jobs-description, .job-details-jobs-unified-top-card__job-description',
+    // LinkedIn renames its BEM classes frequently; the [class*=...] substring
+    // fallbacks survive rename cycles where the exact-class selectors go stale.
+    jobDescription:      '#job-details, .jobs-description-content__text, .jobs-description__content, .jobs-description, article.jobs-description, .job-details-jobs-unified-top-card__job-description, [class*="jobs-description-content"], [class*="job-description__container"], [class*="jobs-description"]',
     jobCards:            null,
-    jobTitle:            'h1[data-test-job-title], .job-details-jobs-unified-top-card__job-title h1, .jobs-unified-top-card__job-title h1, h1.job-details-jobs-unified-top-card__job-title-link, h1',
-    companyName:         'a[data-test-job-details-job-summary-info-company-name], .job-details-jobs-unified-top-card__company-name a, .jobs-unified-top-card__company-name a, .job-details-jobs-unified-top-card__company-name',
+    jobTitle:            'h1[data-test-job-title], .job-details-jobs-unified-top-card__job-title h1, .jobs-unified-top-card__job-title h1, h1.job-details-jobs-unified-top-card__job-title-link, [class*="job-title"] h1, h1',
+    companyName:         'a[data-test-job-details-job-summary-info-company-name], .job-details-jobs-unified-top-card__company-name a, .jobs-unified-top-card__company-name a, .job-details-jobs-unified-top-card__company-name, [class*="company-name"] a, [class*="company-name"]',
     filterSidebar:       null,
     filterTagPills:      null,
     drawerCompanyHeader: null,
     drawerJobTitle:      null,
-    injectTarget:        '#job-details, .jobs-description-content__text, .jobs-description__content, .jobs-description, article.jobs-description, .job-details-jobs-unified-top-card__job-description',
+    injectTarget:        '#job-details, .jobs-description-content__text, .jobs-description__content, .jobs-description, article.jobs-description, .job-details-jobs-unified-top-card__job-description, [class*="jobs-description-content"], [class*="job-description__container"], [class*="jobs-description"]',
     injectPosition:      'beforebegin',
   },
   jobright: {
