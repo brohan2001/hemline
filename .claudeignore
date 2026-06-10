@@ -1,0 +1,7 @@
+node_modules/
+.git/
+logs/
+resumes/*.pdf
+resumes/*.log
+resumes/*.aux
+resumes/*.out

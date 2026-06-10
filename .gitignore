@@ -4,6 +4,8 @@ resumes/*.aux
 resumes/*.log
 resumes/*.out
 .env
-resumes/current_job.txt
-resumes/Rohan_CL_*.tex
+resumes/Rohan_CL_*
 resumes/applied_jobs.json
+logs/
+dist/
+.DS_Store

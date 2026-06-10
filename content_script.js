@@ -1,6 +1,16 @@
 // ─── Constants ────────────────────────────────────────────────────────────────
 const SERVER = 'http://localhost:4567'
 const H1B_THRESHOLD = 50
+const PROFILE = {
+  firstName: 'Rohan',
+  lastName:  'Balasubramanian',
+  fullName:  'Rohan Balasubramanian',
+  email:     'you@example.com',
+  phone:     '000-000-0000',
+  linkedin:  'https://www.linkedin.com/in/brohan2001/',
+  github:    'https://github.com/brohan2001',
+  skills:    'Python, Java, JavaScript, TypeScript, Golang, C/C++, PyTorch, TensorFlow, AWS, GCP, Docker, Kubernetes, Terraform, CI/CD',
+}
 const ENTRY_RE = /associate|junior|\bII\b|0-3\s*years?|grad(?:uate)?|entry/i
 const SENIOR_RE = /\bsenior\b|\blead\b|\bstaff\b/i
 
@@ -18,6 +28,8 @@ const JOB_STATES = {}
 function getJobId() {
   return window.location.pathname.match(/\/jobs\/info\/([^/?#]+)/)?.[1] ?? window.location.pathname
 }
+
+const sleep = ms => new Promise(r => setTimeout(r, ms))
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 function injectStyle(css) {
@@ -167,28 +179,22 @@ function injectActionButtons(cfg) {
   const btnResume  = makePillButton('Resume', 'Tailor Resume')
   const btnBoth    = makePillButton('Resume & CL', 'Tailor Resume & Cover Letter')
   const btnMessage = makePillButton('Message', 'Generate LinkedIn Recruiter Outreach')
+  const btnEmail   = makePillButton('Email', 'Generate Recruiter Cold Email')
 
   if (jobState.resume === 'done') btnResume.textContent = `Resume Downloaded ✓ (${jobState.resumeElapsed}s)`
   if (jobState.both === 'done') btnBoth.textContent = `Both Downloaded ✓ (${jobState.bothElapsed}s total)`
   if (jobState.message === 'done') btnMessage.textContent = 'Copied ✓'
+  if (jobState.email === 'done') btnEmail.textContent = 'Email Opened ✓'
 
   function setBusy(busy) {
     btnResume.disabled  = busy
     btnBoth.disabled    = busy
     btnMessage.disabled = busy
+    btnEmail.disabled   = busy
   }
 
-  function setBothBusy(busy) {
-    btnResume.disabled  = busy
-    btnBoth.disabled    = busy
-    btnMessage.disabled = busy
-  }
-
-  function setAllBusy(busy) {
-    btnResume.disabled  = busy
-    btnBoth.disabled    = busy
-    btnMessage.disabled = busy
-  }
+  const setBothBusy = setBusy
+  const setAllBusy = setBusy
 
   btnResume.addEventListener('click', async () => {
     const jobDescription = jdEl.innerText.trim()
@@ -229,15 +235,17 @@ function injectActionButtons(cfg) {
     const safe = sanitizeForFilename(companyName)
 
     const t0 = performance.now()
+    let phase = 'Tailoring'
     let timerInterval = setInterval(() => {
-      btnBoth.textContent = `Writing CL… ${((performance.now() - t0) / 1000).toFixed(1)}s`
+      btnBoth.textContent = `${phase}… ${((performance.now() - t0) / 1000).toFixed(1)}s`
     }, 200)
     setBothBusy(true)
     try {
-      const [resumeBlob, clBlob] = await Promise.all([
-        callEndpoint('/tailor', { jobDescription, companyName, jobTitle }),
-        callEndpoint('/cover-letter', { jd: jobDescription, companyName, jobTitle }),
-      ])
+      const resumeBlob = await callEndpoint('/tailor', { jobDescription, companyName, jobTitle })
+      // 2.5s stagger prevents concurrent-connection 429 blocks on free API tiers.
+      await sleep(2500)
+      phase = 'Writing CL'
+      const clBlob = await callEndpoint('/cover-letter', { jd: jobDescription, companyName, jobTitle })
       const [resumeDataUrl, clDataUrl] = await Promise.all([blobToDataUrl(resumeBlob), blobToDataUrl(clBlob)])
       chrome.runtime.sendMessage({ type: 'DOWNLOAD_PDF', dataUrl: resumeDataUrl, filename: `Rohan_Resume_${safe}.pdf` })
       chrome.runtime.sendMessage({ type: 'DOWNLOAD_PDF', dataUrl: clDataUrl, filename: `Rohan_CL_${safe}.pdf` })
@@ -297,10 +305,112 @@ function injectActionButtons(cfg) {
     }
   })
 
+  btnEmail.addEventListener('click', async () => {
+    const jd = findFirst(cfg.jobDescription)?.innerText.trim()
+    if (!jd) { alert('JSeek Enhancer: no job description found.'); return }
+
+    const { companyName, jobTitle } = getDrawerContext(cfg)
+
+    const t0 = performance.now()
+    let timerInterval = setInterval(() => {
+      btnEmail.textContent = `Writing… ${((performance.now() - t0) / 1000).toFixed(1)}s`
+    }, 200)
+    setBusy(true)
+    try {
+      const resp = await fetch(`${SERVER}/cold-email`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jd, companyName, jobTitle, provider: llmProvider }),
+      })
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ error: resp.statusText }))
+        throw new Error(err.error ?? resp.statusText)
+      }
+      const { subject, body } = await resp.json()
+      clearInterval(timerInterval); timerInterval = null
+      window.open(`mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`, '_blank')
+      JOB_STATES[jobId] = { ...JOB_STATES[jobId], email: 'done' }
+      btnEmail.textContent = 'Email Opened ✓'
+      setTimeout(() => { btnEmail.textContent = 'Email' }, 3000)
+    } catch (err) {
+      clearInterval(timerInterval); timerInterval = null
+      alert(`JSeek Enhancer: ${err.message}`)
+      btnEmail.textContent = 'Email'
+    } finally {
+      clearInterval(timerInterval)
+      setBusy(false)
+    }
+  })
+
   wrapper.appendChild(btnResume)
   wrapper.appendChild(btnBoth)
   wrapper.appendChild(btnMessage)
+  wrapper.appendChild(btnEmail)
   findFirst(cfg.injectTarget)?.insertAdjacentElement(cfg.injectPosition, wrapper)
+}
+
+// ─── Feature: ATS Easy Apply Auto-Filler (Greenhouse / Lever / Workday) ──────
+const ATS_SLUGS = ['greenhouse', 'lever', 'workday']
+
+const FIELD_PATTERNS = [
+  { re: /first[\s_-]?name|legalNameSection_firstName/i, value: () => PROFILE.firstName },
+  { re: /last[\s_-]?name|legalNameSection_lastName/i,   value: () => PROFILE.lastName },
+  { re: /full[\s_-]?name|^name$|your[\s_-]?name/i,      value: () => PROFILE.fullName },
+  { re: /e-?mail/i,                                     value: () => PROFILE.email },
+  { re: /phone|mobile/i,                                value: () => PROFILE.phone },
+  { re: /linked[\s_-]?in/i,                             value: () => PROFILE.linkedin },
+  { re: /github|portfolio|website/i,                    value: () => PROFILE.github },
+  { re: /skills/i,                                      value: () => PROFILE.skills },
+]
+
+function fieldDescriptor(el) {
+  const label = el.labels?.[0]?.textContent
+    ?? (el.id ? document.querySelector(`label[for="${el.id}"]`)?.textContent : null)
+    ?? ''
+  return [el.name, el.id, el.placeholder, el.getAttribute('aria-label'), el.getAttribute('data-automation-id'), label]
+    .filter(Boolean)
+    .join(' ')
+}
+
+// React-based ATS forms (Greenhouse, Workday) ignore plain value assignment,
+// so we fire input + change events after setting it.
+function setFieldValue(el, value) {
+  el.focus()
+  el.value = value
+  el.dispatchEvent(new Event('input', { bubbles: true }))
+  el.dispatchEvent(new Event('change', { bubbles: true }))
+  el.blur()
+}
+
+function autoFillForm() {
+  let filled = 0
+  findAll('input[type="text"], input[type="email"], input[type="tel"], input[type="url"], input:not([type]), textarea').forEach(el => {
+    if (el.value) return
+    const desc = fieldDescriptor(el)
+    if (!desc) return
+    const match = FIELD_PATTERNS.find(p => p.re.test(desc))
+    if (!match) return
+    setFieldValue(el, match.value())
+    filled++
+  })
+  return filled
+}
+
+function injectAutoFillButton() {
+  if (document.getElementById('jseek-autofill-btn')) return
+
+  const form = findFirst('form')
+  if (!form) return
+
+  const btn = makePillButton('Auto-Fill', 'Fill name, email, GitHub, LinkedIn, and skills from local profile')
+  btn.id = 'jseek-autofill-btn'
+  btn.addEventListener('click', (e) => {
+    e.preventDefault()
+    const filled = autoFillForm()
+    btn.textContent = filled > 0 ? `Auto-Filled ${filled} fields ✓` : 'No empty fields matched'
+    setTimeout(() => { btn.textContent = 'Auto-Fill' }, 3000)
+  })
+  form.insertAdjacentElement('beforebegin', btn)
 }
 
 // ─── Feature 2: Enhanced Seniority Filter ────────────────────────────────────
@@ -497,6 +607,8 @@ async function loadH1bData() {
 
 function runFeatures(cfg) {
   injectActionButtons(cfg)
+
+  if (ATS_SLUGS.includes(cfg.slug)) injectAutoFillButton()
 
   if (cfg.slug === 'jseek') {
     const sidebarContainer = findFirst(cfg.filterSidebar)

@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JSeek Enhancer Dashboard</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #f9fafb;
+    color: #111827;
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 32px 20px;
+  }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  .sub { font-size: 13px; color: #6b7280; margin-bottom: 24px; }
+  label { display: block; font-size: 12px; font-weight: 600; color: #374151; margin: 14px 0 4px; }
+  input, textarea {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 13px;
+    font-family: inherit;
+    background: #fff;
+  }
+  textarea { resize: vertical; }
+  #jd { min-height: 180px; }
+  .row { display: flex; gap: 12px; }
+  .row > div { flex: 1; }
+  .actions { display: flex; gap: 8px; margin-top: 18px; flex-wrap: wrap; align-items: center; }
+  button {
+    padding: 9px 16px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    background: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    color: #374151;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  button:hover:not(:disabled) { background: #f3f4f6; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  button.primary { background: #1d4ed8; border-color: #1d4ed8; color: #fff; }
+  button.primary:hover:not(:disabled) { background: #1e40af; }
+  #timer { font-size: 13px; font-weight: 600; color: #1d4ed8; min-width: 90px; }
+  #status { font-size: 12px; color: #6b7280; margin-top: 10px; min-height: 16px; }
+  #status.error { color: #b91c1c; }
+  #message-wrap { display: none; margin-top: 18px; }
+  #message { min-height: 100px; }
+  #copy-btn { margin-top: 8px; }
+</style>
+</head>
+<body>
+  <h1>JSeek Enhancer</h1>
+  <p class="sub">Local dashboard — paste a job description, generate tailored documents.</p>
+
+  <label for="jd">Job Description</label>
+  <textarea id="jd" placeholder="Paste the raw job description here…"></textarea>
+
+  <div class="row">
+    <div>
+      <label for="company">Company Name</label>
+      <input id="company" placeholder="e.g. Anthropic">
+    </div>
+    <div>
+      <label for="title">Job Title</label>
+      <input id="title" placeholder="e.g. Software Engineer">
+    </div>
+  </div>
+
+  <div class="actions">
+    <button id="btn-resume" class="primary">Tailor Resume</button>
+    <button id="btn-cl">Tailor Cover Letter</button>
+    <button id="btn-msg">Generate Cold Message</button>
+    <span id="timer"></span>
+  </div>
+  <p id="status"></p>
+
+  <div id="message-wrap">
+    <label for="message">Cold Message</label>
+    <textarea id="message" readonly></textarea>
+    <button id="copy-btn">Copy to Clipboard</button>
+  </div>
+
+<script>
+  const $ = id => document.getElementById(id)
+  const buttons = ['btn-resume', 'btn-cl', 'btn-msg'].map($)
+
+  let timerInterval = null
+  function startTimer() {
+    const t0 = performance.now()
+    timerInterval = setInterval(() => {
+      $('timer').textContent = ((performance.now() - t0) / 1000).toFixed(1) + 's'
+    }, 100)
+    return t0
+  }
+  function stopTimer(t0) {
+    clearInterval(timerInterval)
+    const elapsed = ((performance.now() - t0) / 1000).toFixed(1)
+    $('timer').textContent = elapsed + 's'
+    return elapsed
+  }
+
+  function setBusy(busy) {
+    buttons.forEach(b => { b.disabled = busy })
+  }
+
+  function inputs() {
+    return {
+      jd: $('jd').value.trim(),
+      companyName: $('company').value.trim(),
+      jobTitle: $('title').value.trim(),
+    }
+  }
+
+  function setStatus(text, isError = false) {
+    $('status').textContent = text
+    $('status').className = isError ? 'error' : ''
+  }
+
+  async function post(endpoint, payload) {
+    const resp = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ error: resp.statusText }))
+      throw new Error(err.error ?? resp.statusText)
+    }
+    return resp
+  }
+
+  function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  function safeName(name) {
+    return (name || 'Company').replace(/[^a-zA-Z0-9\-]/g, '_').replace(/_+/g, '_')
+  }
+
+  async function runPdf(endpoint, payloadKey, prefix) {
+    const { jd, companyName, jobTitle } = inputs()
+    if (!jd) { setStatus('Paste a job description first.', true); return }
+    setBusy(true)
+    setStatus('Generating…')
+    const t0 = startTimer()
+    try {
+      const payload = { [payloadKey]: jd, companyName, jobTitle }
+      const resp = await post(endpoint, payload)
+      const blob = await resp.blob()
+      downloadBlob(blob, `${prefix}_${safeName(companyName)}.pdf`)
+      const elapsed = stopTimer(t0)
+      setStatus(`Done in ${elapsed}s — PDF downloaded.`)
+    } catch (err) {
+      stopTimer(t0)
+      setStatus(err.message, true)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  $('btn-resume').addEventListener('click', () => runPdf('/tailor', 'jobDescription', 'Rohan_Resume'))
+  $('btn-cl').addEventListener('click', () => runPdf('/cover-letter', 'jd', 'Rohan_CL'))
+
+  $('btn-msg').addEventListener('click', async () => {
+    const { jd, companyName, jobTitle } = inputs()
+    if (!jd) { setStatus('Paste a job description first.', true); return }
+    setBusy(true)
+    setStatus('Generating…')
+    const t0 = startTimer()
+    try {
+      const resp = await post('/cold-message', { jd, companyName, jobTitle })
+      const { message } = await resp.json()
+      $('message').value = message
+      $('message-wrap').style.display = 'block'
+      const elapsed = stopTimer(t0)
+      setStatus(`Done in ${elapsed}s — message ready below.`)
+    } catch (err) {
+      stopTimer(t0)
+      setStatus(err.message, true)
+    } finally {
+      setBusy(false)
+    }
+  })
+
+  $('copy-btn').addEventListener('click', async () => {
+    await navigator.clipboard.writeText($('message').value)
+    $('copy-btn').textContent = 'Copied ✓'
+    setTimeout(() => { $('copy-btn').textContent = 'Copy to Clipboard' }, 2000)
+  })
+</script>
+</body>
+</html>
