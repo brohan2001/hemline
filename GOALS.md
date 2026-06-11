@@ -84,3 +84,26 @@ single source of truth for Phase 3 progress. Do not mark a task done until its a
 - `CLAUDE.md` is the complete ops runbook needed to configure and run the system from scratch
 - No obsolete documentation files remain in `docs/`
 - `npm test` passes with all 64 tests green
+
+---
+
+# Phase 6 Production Sprint Goals (June 2026)
+
+> Note: distinct from the earlier "Phase 6" documentation pass above; this is the
+> production sprint committed as `bdcdb07` ("complete Phase 6 final production release").
+
+## Tasks
+
+- [x] Step 1: Job Stream Dashboard — `GET /api/jobs` aggregating Arbeitnow + Remotive + Jobicy (Promise.allSettled, URL dedup); `public/index.html` refactored to a 2-column layout where clicking a job card in the left stream populates the right tailoring panel
+- [x] Step 2: Production auto-filler — `setFieldValue` uses the native prototype value setter to bypass React's fiber shim, dispatches `InputEvent` with `composed: true` for Workday shadow-DOM forms
+- [x] Step 3: Live Playwright E2E suite — `tests/ui_live.test.js` loads the unpacked extension into real Chromium and asserts `#jseek-btn-row` injection on live Greenhouse and Lever job pages; LinkedIn/Indeed best-effort (bot protection); `test:ui-live` script; live suites gated behind `JSEEK_LIVE=1`
+- [x] Step 4: Universal semantic scraper — `detectSite()` falls back to `SITE_CONFIGS.universal`; heuristic scorer ranks content blocks by text density × JD-keyword hits × log(length); `*://*/*` added to both manifests
+- [x] Step 5: Git hardening — `tests/mocks/` and `*.tex.bak` gitignored (existing mocks stay tracked — the unit tests need them); clean commit pushed to origin/main
+
+## Success Definition
+
+- `curl localhost:4567/api/jobs` returns 100+ aggregated jobs even if one source API is down
+- Clicking a job card fills JD, company, and title in one click — verified in the dashboard
+- `npm test` passes (101 tests) and `npm run test:ui-live` passes 4/4 against live production pages
+- The extension injects buttons on a careers page outside the 12 mapped platforms, and injects nothing on non-job pages
+- Auto-Fill populates React-managed Greenhouse fields without the values reverting on blur
