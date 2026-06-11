@@ -1,7 +1,7 @@
 // ─── Constants ────────────────────────────────────────────────────────────────
 const SERVER = 'http://localhost:4567'
 const H1B_THRESHOLD = 50
-const PROFILE = {
+const DEFAULT_PROFILE = {
   firstName: 'Rohan',
   lastName:  'Balasubramanian',
   fullName:  'Rohan Balasubramanian',
@@ -11,6 +11,8 @@ const PROFILE = {
   github:    'https://github.com/brohan2001',
   skills:    'Python, Java, JavaScript, TypeScript, Golang, C/C++, PyTorch, TensorFlow, AWS, GCP, Docker, Kubernetes, Terraform, CI/CD',
 }
+// Overridden from chrome.storage in init() when the options page saved a profile.
+let PROFILE = DEFAULT_PROFILE
 const ENTRY_RE = /associate|junior|\bII\b|0-3\s*years?|grad(?:uate)?|entry/i
 const SENIOR_RE = /\bsenior\b|\blead\b|\bstaff\b/i
 
@@ -691,8 +693,12 @@ async function init() {
   if (cfg.slug === 'jseek') await loadH1bData()
 
   await new Promise(resolve => {
-    chrome.storage.local.get('llmProvider', ({ llmProvider: saved }) => {
+    chrome.storage.local.get(['llmProvider', 'profile'], ({ llmProvider: saved, profile }) => {
       if (saved) llmProvider = saved
+      if (profile) {
+        PROFILE = { ...DEFAULT_PROFILE, ...profile }
+        PROFILE.fullName = `${PROFILE.firstName} ${PROFILE.lastName}`
+      }
       resolve()
     })
   })

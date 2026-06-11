@@ -12,7 +12,7 @@
     "test:live": "vitest run tests/live.test.js",
     "test:ui": "vitest run tests/ui.test.js",
     "benchmark": "node --env-file=.env scripts/benchmark-models.js",
-    "build:firefox": "rm -rf dist/firefox && mkdir -p dist/firefox && cp manifest_firefox.json dist/firefox/manifest.json && cp background.js content_script.js site_configs.js h1b_data.json dist/firefox/"
+    "build:firefox": "rm -rf dist/firefox && mkdir -p dist/firefox && cp manifest_firefox.json dist/firefox/manifest.json && cp background.js content_script.js site_configs.js h1b_data.json options.html options.js dist/firefox/"
   },
   "dependencies": {
     "cors": "^2.8.5",

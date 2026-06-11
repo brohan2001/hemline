@@ -26,7 +26,7 @@ const PLATFORM_URLS = {
   dice:         'https://www.dice.com/job-detail/12345',
 }
 
-function chromeMock() {
+function chromeMock(storageData = {}) {
   return {
     runtime: {
       getURL: (p) => `chrome-extension://test/${p}`,
@@ -34,18 +34,18 @@ function chromeMock() {
     },
     storage: {
       local: {
-        get: (_key, cb) => cb({}),
+        get: (_key, cb) => cb(storageData),
         set: () => {},
       },
     },
   }
 }
 
-async function bootContentScript(slug) {
+async function bootContentScript(slug, storageData = {}) {
   const html = readFileSync(path.join(__dirname, `mocks/${slug}.html`), 'utf8')
   const dom = new JSDOM(html, { url: PLATFORM_URLS[slug], runScripts: 'outside-only' })
 
-  dom.window.chrome = chromeMock()
+  dom.window.chrome = chromeMock(storageData)
   // Healthy /health stub so pingHealth keeps the buttons enabled.
   dom.window.fetch = () => Promise.resolve({ ok: true, json: async () => ({ status: 'ok' }) })
   dom.window.alert = () => {}
@@ -59,6 +59,17 @@ async function bootContentScript(slug) {
   }
   return dom
 }
+
+describe('content script boots with a stored profile', () => {
+  it('still injects buttons when chrome.storage holds a saved profile', async () => {
+    const dom = await bootContentScript('greenhouse', {
+      llmProvider: 'relay',
+      profile: { firstName: 'Jane', email: 'jane@example.com' },
+    })
+    expect(dom.window.document.getElementById('jseek-btn-row')).not.toBeNull()
+    dom.window.close()
+  })
+})
 
 describe('content script button injection across all 12 platforms', () => {
   for (const slug of Object.keys(PLATFORM_URLS)) {
