@@ -205,6 +205,53 @@ describe('POST /cold-message', () => {
   })
 })
 
+describe('application ledger endpoints', () => {
+  const today = new Date().toISOString().slice(0, 10)
+  const old = new Date(Date.now() - 60 * 864e5).toISOString().slice(0, 10)
+  const LEDGER = JSON.stringify([
+    { company: 'Acme', title: 'SWE', date: today, resumePath: 'resumes/r.pdf', clPath: null },
+    { company: 'Stale Corp', title: 'SWE', date: old, resumePath: 'resumes/r.pdf', clPath: null },
+  ])
+
+  beforeEach(() => {
+    vi.mocked(fsp.readFile).mockImplementation(async (p) => {
+      if (String(p).endsWith('applied_jobs.json')) return LEDGER
+      if (String(p).endsWith('.pdf')) return FAKE_PDF
+      return FAKE_TEX
+    })
+  })
+
+  it('GET /applications returns the ledger with count', async () => {
+    const res = await request(app).get('/applications')
+    expect(res.status).toBe(200)
+    expect(res.body.count).toBe(2)
+    expect(res.body.applications[0].company).toBe('Acme')
+  })
+
+  it('GET /applications/check flags a recent duplicate (case-insensitive)', async () => {
+    const res = await request(app).get('/applications/check?company=acme')
+    expect(res.status).toBe(200)
+    expect(res.body.duplicate).toBe(true)
+    expect(res.body.lastDate).toBe(today)
+    expect(res.body.timesApplied).toBe(1)
+  })
+
+  it('GET /applications/check ignores applications older than 30 days', async () => {
+    const res = await request(app).get('/applications/check?company=Stale%20Corp')
+    expect(res.body.duplicate).toBe(false)
+  })
+
+  it('GET /applications/check returns false for unknown company', async () => {
+    const res = await request(app).get('/applications/check?company=nonexistent')
+    expect(res.body.duplicate).toBe(false)
+  })
+
+  it('GET /applications/check requires company param', async () => {
+    const res = await request(app).get('/applications/check')
+    expect(res.status).toBe(400)
+  })
+})
+
 describe('POST /cold-email', () => {
   it('returns 400 when jd is missing', async () => {
     const res = await request(app).post('/cold-email').send({})

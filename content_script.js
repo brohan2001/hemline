@@ -148,6 +148,17 @@ async function callEndpoint(endpoint, payload) {
   return resp.blob()
 }
 
+async function confirmNotDuplicate(companyName, jobTitle) {
+  try {
+    const r = await fetch(`${SERVER}/applications/check?company=${encodeURIComponent(companyName)}&title=${encodeURIComponent(jobTitle)}`)
+    const d = await r.json()
+    if (d.duplicate) {
+      return confirm(`JSeek: already applied to ${companyName} on ${d.lastDate} (${d.timesApplied}x in the last 30 days). Generate anyway?`)
+    }
+  } catch { /* check unavailable — never block generation */ }
+  return true
+}
+
 function blobToDataUrl(blob) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -204,6 +215,7 @@ function injectActionButtons(cfg) {
 
     const { companyName, jobTitle } = getDrawerContext(cfg)
     const safe = sanitizeForFilename(companyName)
+    if (companyName && !(await confirmNotDuplicate(companyName, jobTitle))) return
 
     const t0 = performance.now()
     let timerInterval = setInterval(() => {
@@ -235,6 +247,7 @@ function injectActionButtons(cfg) {
 
     const { companyName, jobTitle } = getDrawerContext(cfg)
     const safe = sanitizeForFilename(companyName)
+    if (companyName && !(await confirmNotDuplicate(companyName, jobTitle))) return
 
     const t0 = performance.now()
     let phase = 'Tailoring'

@@ -390,13 +390,17 @@ async function readProjectPool() {
   }
 }
 
-async function appendLedger(entry) {
-  let entries = []
+async function readLedger() {
   try {
-    const raw = await fs.readFile(LEDGER_PATH, 'utf8')
-    const parsed = JSON.parse(raw)
-    if (Array.isArray(parsed)) entries = parsed
-  } catch { /* file missing or malformed — start fresh */ }
+    const parsed = JSON.parse(await fs.readFile(LEDGER_PATH, 'utf8'))
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+async function appendLedger(entry) {
+  const entries = await readLedger()
   entries.push(entry)
   await fs.writeFile(LEDGER_PATH, JSON.stringify(entries, null, 2), 'utf8')
 }
@@ -513,6 +517,29 @@ app.use(express.json({ limit: '2mb' }))
 app.use(express.static(path.join(__dirname, 'public')))
 
 app.get('/health', (_req, res) => res.json({ status: 'ok', claudePath }))
+
+app.get('/applications', async (_req, res) => {
+  const applications = await readLedger()
+  res.json({ count: applications.length, applications })
+})
+
+app.get('/applications/check', async (req, res) => {
+  const company = (req.query.company ?? '').trim().toLowerCase()
+  const title = (req.query.title ?? '').trim().toLowerCase()
+  if (!company) return res.status(400).json({ error: 'company query param is required' })
+
+  const cutoff = Date.now() - 30 * 864e5
+  const matches = (await readLedger()).filter(e => {
+    if ((e.company ?? '').trim().toLowerCase() !== company) return false
+    if (title && (e.title ?? '').trim().toLowerCase() !== title) return false
+    const ts = Date.parse(e.date)
+    return !Number.isNaN(ts) && ts >= cutoff
+  })
+  if (matches.length === 0) return res.json({ duplicate: false })
+
+  const latest = matches.reduce((a, b) => (a.date > b.date ? a : b))
+  res.json({ duplicate: true, lastDate: latest.date, lastTitle: latest.title, timesApplied: matches.length })
+})
 
 app.post('/tailor', async (req, res) => {
   const { jobDescription, companyName = '', jobTitle = '' } = req.body

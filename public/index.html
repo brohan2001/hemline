@@ -52,6 +52,15 @@
   #message-wrap { display: none; margin-top: 18px; }
   #message { min-height: 100px; }
   #copy-btn { margin-top: 8px; }
+
+  .panel { margin-top: 32px; border-top: 1px solid #e5e7eb; padding-top: 18px; }
+  .panel h2 { font-size: 15px; margin-bottom: 10px; }
+  .panel-bar { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+  .panel-bar input { flex: 1; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #f3f4f6; }
+  th { color: #6b7280; font-weight: 600; }
+  .count-badge { font-size: 12px; color: #6b7280; font-weight: 400; }
 </style>
 </head>
 <body>
@@ -84,6 +93,18 @@
     <label for="message">Cold Message</label>
     <textarea id="message" readonly></textarea>
     <button id="copy-btn">Copy to Clipboard</button>
+  </div>
+
+  <div class="panel">
+    <h2>Applications <span id="app-count" class="count-badge"></span></h2>
+    <div class="panel-bar">
+      <input id="app-filter" placeholder="Filter by company or title…">
+      <button id="export-csv">Export CSV</button>
+    </div>
+    <table id="app-table">
+      <thead><tr><th>Date</th><th>Company</th><th>Title</th><th>Resume</th><th>CL</th></tr></thead>
+      <tbody></tbody>
+    </table>
   </div>
 
 <script>
@@ -150,9 +171,20 @@
     return (name || 'Company').replace(/[^a-zA-Z0-9\-]/g, '_').replace(/_+/g, '_')
   }
 
+  async function confirmNotDuplicate(companyName, jobTitle) {
+    if (!companyName) return true
+    try {
+      const r = await fetch(`/applications/check?company=${encodeURIComponent(companyName)}&title=${encodeURIComponent(jobTitle)}`)
+      const d = await r.json()
+      if (d.duplicate) return window.confirm(`Already applied to ${companyName} on ${d.lastDate} (${d.timesApplied}x in the last 30 days). Generate anyway?`)
+    } catch { /* check unavailable — never block */ }
+    return true
+  }
+
   async function runPdf(endpoint, payloadKey, prefix) {
     const { jd, companyName, jobTitle } = inputs()
     if (!jd) { setStatus('Paste a job description first.', true); return }
+    if (!(await confirmNotDuplicate(companyName, jobTitle))) return
     setBusy(true)
     setStatus('Generating…')
     const t0 = startTimer()
@@ -163,6 +195,7 @@
       downloadBlob(blob, `${prefix}_${safeName(companyName)}.pdf`)
       const elapsed = stopTimer(t0)
       setStatus(`Done in ${elapsed}s — PDF downloaded.`)
+      loadApplications()
     } catch (err) {
       stopTimer(t0)
       setStatus(err.message, true)
@@ -200,6 +233,48 @@
     $('copy-btn').textContent = 'Copied ✓'
     setTimeout(() => { $('copy-btn').textContent = 'Copy to Clipboard' }, 2000)
   })
+
+  let allApplications = []
+
+  function renderApplications() {
+    const q = $('app-filter').value.trim().toLowerCase()
+    const rows = allApplications.filter(a =>
+      !q || `${a.company} ${a.title}`.toLowerCase().includes(q)
+    )
+    const tbody = $('app-table').querySelector('tbody')
+    tbody.innerHTML = ''
+    for (const a of [...rows].reverse()) {
+      const tr = document.createElement('tr')
+      for (const val of [a.date, a.company, a.title, a.resumePath ? '✓' : '—', a.clPath ? '✓' : '—']) {
+        const td = document.createElement('td')
+        td.textContent = val ?? ''
+        tr.appendChild(td)
+      }
+      tbody.appendChild(tr)
+    }
+    $('app-count').textContent = q ? `(${rows.length}/${allApplications.length})` : `(${allApplications.length})`
+  }
+
+  async function loadApplications() {
+    try {
+      const resp = await fetch('/applications')
+      const data = await resp.json()
+      allApplications = data.applications ?? []
+      renderApplications()
+    } catch { /* server hiccup — leave table as-is */ }
+  }
+
+  $('app-filter').addEventListener('input', renderApplications)
+
+  $('export-csv').addEventListener('click', () => {
+    const esc = v => `"${String(v ?? '').replace(/"/g, '""')}"`
+    const csv = ['Date,Company,Title,Resume,CL']
+      .concat(allApplications.map(a => [a.date, a.company, a.title, a.resumePath ?? '', a.clPath ?? ''].map(esc).join(',')))
+      .join('\n')
+    downloadBlob(new Blob([csv], { type: 'text/csv' }), 'applications.csv')
+  })
+
+  loadApplications()
 </script>
 </body>
 </html>
