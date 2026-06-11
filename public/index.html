@@ -194,7 +194,8 @@
       const blob = await resp.blob()
       downloadBlob(blob, `${prefix}_${safeName(companyName)}.pdf`)
       const elapsed = stopTimer(t0)
-      setStatus(`Done in ${elapsed}s — PDF downloaded.`)
+      const score = resp.headers.get('X-JSeek-Match-Score')
+      setStatus(`Done in ${elapsed}s — PDF downloaded.${score !== null ? ` — ${score}% keyword match` : ''}`)
       loadApplications()
     } catch (err) {
       stopTimer(t0)

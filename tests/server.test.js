@@ -45,7 +45,7 @@ vi.mock('fs', async (importOriginal) => {
   }
 })
 
-import { app } from '../server.js'
+import { app, computeMatchScore } from '../server.js'
 import { execFile } from 'child_process'
 import { promises as fsp } from 'fs'
 
@@ -83,6 +83,7 @@ describe('POST /tailor', () => {
       .send({ jobDescription: 'ML engineer role requiring Python and TensorFlow', companyName: 'Acme', jobTitle: 'SWE' })
     expect(res.status).toBe(200)
     expect(res.headers['content-type']).toMatch(/application\/pdf/)
+    expect(res.headers['x-jseek-match-score']).toMatch(/^\d+$/)
   })
 
   it('never writes to the master swe.tex (compiles in resumes/build)', async () => {
@@ -202,6 +203,21 @@ describe('POST /cold-message', () => {
     expect(res.status).toBe(200)
     expect(typeof res.body.message).toBe('string')
     expect(res.body.message.length).toBeGreaterThan(0)
+  })
+})
+
+describe('computeMatchScore', () => {
+  it('scores keyword coverage of the tailored tex', () => {
+    const jd = 'kubernetes kubernetes kubernetes terraform terraform golang golang'
+    const tex = 'Skills: Kubernetes, Terraform, Python'
+    const m = computeMatchScore(jd, tex)
+    expect(m.score).toBe(67)
+    expect(m.matched).toEqual(expect.arrayContaining(['kubernetes', 'terraform']))
+    expect(m.missing).toEqual(['golang'])
+  })
+
+  it('returns 0 for an empty or all-stopword JD', () => {
+    expect(computeMatchScore('the and with you will', 'anything').score).toBe(0)
   })
 })
 

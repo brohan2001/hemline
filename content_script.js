@@ -145,7 +145,7 @@ async function callEndpoint(endpoint, payload) {
     if (err.latexError) msg += ` — LaTeX: ${err.latexError.message}${err.latexError.line ? ` (line ${err.latexError.line})` : ''}`
     throw new Error(msg)
   }
-  return resp.blob()
+  return { blob: await resp.blob(), matchScore: resp.headers.get('X-JSeek-Match-Score') }
 }
 
 async function confirmNotDuplicate(companyName, jobTitle) {
@@ -223,13 +223,15 @@ function injectActionButtons(cfg) {
     }, 200)
     setBusy(true)
     try {
-      const blob    = await callEndpoint('/tailor', { jobDescription, companyName, jobTitle })
+      const { blob, matchScore } = await callEndpoint('/tailor', { jobDescription, companyName, jobTitle })
       const dataUrl = await blobToDataUrl(blob)
       chrome.runtime.sendMessage({ type: 'DOWNLOAD_PDF', dataUrl, filename: `Rohan_Resume_${safe}.pdf` })
       clearInterval(timerInterval); timerInterval = null
       const elapsed = ((performance.now() - t0) / 1000).toFixed(1)
       JOB_STATES[jobId] = { ...JOB_STATES[jobId], resume: 'done', resumeElapsed: elapsed }
-      btnResume.textContent = `Resume Downloaded ✓ (${elapsed}s)`
+      btnResume.textContent = matchScore !== null
+        ? `Resume ✓ ${matchScore}% match (${elapsed}s)`
+        : `Resume Downloaded ✓ (${elapsed}s)`
       setTimeout(() => { btnResume.textContent = 'Resume' }, 3000)
     } catch (err) {
       clearInterval(timerInterval); timerInterval = null
@@ -256,11 +258,11 @@ function injectActionButtons(cfg) {
     }, 200)
     setBothBusy(true)
     try {
-      const resumeBlob = await callEndpoint('/tailor', { jobDescription, companyName, jobTitle })
+      const { blob: resumeBlob } = await callEndpoint('/tailor', { jobDescription, companyName, jobTitle })
       // 2.5s stagger prevents concurrent-connection 429 blocks on free API tiers.
       await sleep(2500)
       phase = 'Writing CL'
-      const clBlob = await callEndpoint('/cover-letter', { jd: jobDescription, companyName, jobTitle })
+      const { blob: clBlob } = await callEndpoint('/cover-letter', { jd: jobDescription, companyName, jobTitle })
       const [resumeDataUrl, clDataUrl] = await Promise.all([blobToDataUrl(resumeBlob), blobToDataUrl(clBlob)])
       chrome.runtime.sendMessage({ type: 'DOWNLOAD_PDF', dataUrl: resumeDataUrl, filename: `Rohan_Resume_${safe}.pdf` })
       chrome.runtime.sendMessage({ type: 'DOWNLOAD_PDF', dataUrl: clDataUrl, filename: `Rohan_CL_${safe}.pdf` })
