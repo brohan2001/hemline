@@ -6,6 +6,7 @@ resumes/*.out
 .env
 resumes/Rohan_CL_*
 resumes/applied_jobs.json
+resumes/build/
 logs/
 dist/
 .DS_Store

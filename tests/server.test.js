@@ -1,5 +1,6 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest'
 import request from 'supertest'
+import path from 'path'
 
 const FAKE_TEX = '\\documentclass{article}\\begin{document}hello\\end{document}'
 const FAKE_PDF = Buffer.from('%PDF-1.4 fake')
@@ -28,12 +29,14 @@ vi.mock('fs', async (importOriginal) => {
       unlink: vi.fn().mockResolvedValue(undefined),
       mkdir: vi.fn().mockResolvedValue(undefined),
       appendFile: vi.fn().mockResolvedValue(undefined),
+      copyFile: vi.fn().mockResolvedValue(undefined),
     },
   }
 })
 
 import { app } from '../server.js'
 import { execFile } from 'child_process'
+import { promises as fsp } from 'fs'
 
 beforeEach(() => {
   vi.mocked(execFile).mockImplementation((_bin, _args, _opts, cb) => {
@@ -69,6 +72,39 @@ describe('POST /tailor', () => {
       .send({ jobDescription: 'ML engineer role requiring Python and TensorFlow', companyName: 'Acme', jobTitle: 'SWE' })
     expect(res.status).toBe(200)
     expect(res.headers['content-type']).toMatch(/application\/pdf/)
+  })
+
+  it('never writes to the master swe.tex (compiles in resumes/build)', async () => {
+    vi.mocked(fsp.writeFile).mockClear()
+    const res = await request(app)
+      .post('/tailor')
+      .send({ jobDescription: 'ML engineer role', companyName: 'Acme', jobTitle: 'SWE' })
+    expect(res.status).toBe(200)
+    const writtenPaths = vi.mocked(fsp.writeFile).mock.calls.map(c => String(c[0]))
+    const masterWrites = writtenPaths.filter(p => p.endsWith(path.join('resumes', 'swe.tex')))
+    expect(masterWrites).toEqual([])
+    expect(writtenPaths.some(p => p.includes(path.join('build', 'swe.tex')))).toBe(true)
+  })
+
+  it('serializes concurrent tailor requests through the pipeline mutex', async () => {
+    let inFlight = false
+    let overlapped = false
+    vi.mocked(execFile).mockImplementation((_bin, _args, _opts, cb) => {
+      if (inFlight) overlapped = true
+      inFlight = true
+      setTimeout(() => {
+        inFlight = false
+        cb(null, FAKE_TEX, '')
+      }, 20)
+      return { stdin: { end: vi.fn() } }
+    })
+    const [a, b] = await Promise.all([
+      request(app).post('/tailor').send({ jobDescription: 'role one', companyName: 'A' }),
+      request(app).post('/tailor').send({ jobDescription: 'role two', companyName: 'B' }),
+    ])
+    expect(a.status).toBe(200)
+    expect(b.status).toBe(200)
+    expect(overlapped).toBe(false)
   })
 })
 

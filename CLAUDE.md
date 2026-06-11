@@ -48,6 +48,8 @@ After a successful request, only these files remain:
 
 Generated `Rohan_CL_*.tex`, `Rohan_CL_*.pdf`, and `.aux`/`.log`/`.out` artifacts are deleted asynchronously after the response is sent. The `swe.pdf` artifact from `/tailor` is also cleaned up (only `.aux/.log/.out` — `swe.pdf` itself is kept as the last compiled output).
 
+`/tailor` compiles inside `resumes/build/` (`.gitignore`d) and never modifies the master `swe.tex` — the tailored tex, page-guard spacing adjustments, and pdflatex artifacts all stay in the build sandbox. Tailor and cover-letter requests are serialized by a pipeline mutex.
+
 ## Formatting guidelines
 
 - Plain ESM JavaScript (no TypeScript, no bundler) for all extension files

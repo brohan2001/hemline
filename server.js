@@ -20,6 +20,7 @@ const execFileAsync = promisify(execFile)
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const PORT = 4567
 const RESUMES_DIR = path.join(__dirname, 'resumes')
+const BUILD_DIR = path.join(RESUMES_DIR, 'build')
 const LEDGER_PATH = path.join(RESUMES_DIR, 'applied_jobs.json')
 
 let claudePath = 'claude'
@@ -274,6 +275,15 @@ async function cleanupPdflatex(basePath) {
   }
 }
 
+// Serializes the tailor/cover-letter pipelines: both compile via pdflatex in
+// shared directories, so concurrent requests would interleave file writes.
+let pipelineLock = Promise.resolve()
+function withPipelineLock(fn) {
+  const run = pipelineLock.then(fn, fn)
+  pipelineLock = run.then(() => {}, () => {})
+  return run
+}
+
 const LOGS_DIR = path.join(__dirname, 'logs')
 const PIPELINE_LOG = path.join(LOGS_DIR, 'pipeline.log')
 const RELAY_LOG = path.join(LOGS_DIR, 'relay.log')
@@ -488,11 +498,17 @@ app.post('/tailor', async (req, res) => {
   const safe = sanitizeFilename(companyName)
   const texFile = path.join(RESUMES_DIR, 'swe.tex')
   const pdfFile = path.join(RESUMES_DIR, 'swe.pdf')
+  // All compile artifacts live in resumes/build/ so the master swe.tex is
+  // never mutated and page-guard tightening can't accumulate across requests.
+  const buildTex = path.join(BUILD_DIR, 'swe.tex')
+  const buildPdf = path.join(BUILD_DIR, 'swe.pdf')
 
   try {
+    await withPipelineLock(async () => {
     const t0 = performance.now()
     console.log(`[/tailor] Company: ${companyName || '(none)'} | JD: ${jobDescription.length} chars`)
 
+    await fs.mkdir(BUILD_DIR, { recursive: true })
     const [sweTex, skills, projectPool] = await Promise.all([
       fs.readFile(texFile, 'utf8'),
       readSkillFiles(),
@@ -531,14 +547,13 @@ app.post('/tailor', async (req, res) => {
     logPipeline({ event: 'tailor_skills_block', company: companyName, skillsBlock }).catch(() => {})
     console.log(`[Stage 4] LLM generated Technical Skills only (${skillsBlock.split('\n').length} lines). Compiling PDF…`)
 
-    await fs.writeFile(texFile, newTex, 'utf8')
+    await fs.writeFile(buildTex, newTex, 'utf8')
 
-    const pdflatexArgs = ['-interaction=nonstopmode', `-output-directory=${RESUMES_DIR}`, texFile]
+    const pdflatexArgs = ['-interaction=nonstopmode', `-output-directory=${BUILD_DIR}`, buildTex]
     let latexResult
     try {
       latexResult = await execFileAsync('pdflatex', pdflatexArgs, { cwd: __dirname, timeout: 60_000 })
     } catch (pdfErr) {
-      await fs.writeFile(texFile, sweTex, 'utf8').catch(() => {})
       console.error('pdflatex FAILED (tailor). stdout:\n' + (pdfErr.stdout || '(empty)'))
       console.error('pdflatex stderr:\n' + (pdfErr.stderr || '(empty)'))
       throw pdfErr
@@ -548,11 +563,10 @@ app.post('/tailor', async (req, res) => {
     for (let attempt = 1; pageCount > 1 && attempt <= 5; attempt++) {
       console.log(`[PageGuard] Page count: ${pageCount}, attempt ${attempt}/5 — tightening vertical spacing`)
       newTex = tightenVerticalSpacing(newTex)
-      await fs.writeFile(texFile, newTex, 'utf8')
+      await fs.writeFile(buildTex, newTex, 'utf8')
       try {
         latexResult = await execFileAsync('pdflatex', pdflatexArgs, { cwd: __dirname, timeout: 60_000 })
       } catch (pdfErr) {
-        await fs.writeFile(texFile, sweTex, 'utf8').catch(() => {})
         console.error('pdflatex FAILED (page guard). stdout:\n' + (pdfErr.stdout || '(empty)'))
         throw pdfErr
       }
@@ -561,7 +575,8 @@ app.post('/tailor', async (req, res) => {
     if (pageCount > 1) console.warn(`[PageGuard] Still ${pageCount} pages after 5 attempts; shipping as-is`)
     const t3 = performance.now()
 
-    const pdfBuffer = await fs.readFile(pdfFile)
+    const pdfBuffer = await fs.readFile(buildPdf)
+    await fs.copyFile(buildPdf, pdfFile).catch(() => {})
     res.setHeader('Content-Type', 'application/pdf')
     res.setHeader('Content-Disposition', `attachment; filename="Rohan_Resume_${safe}.pdf"`)
     res.send(pdfBuffer)
@@ -569,7 +584,7 @@ app.post('/tailor', async (req, res) => {
 
     console.log(`[/tailor] Done: LLM ${((t2 - t1) / 1000).toFixed(1)}s | pdflatex ${((t3 - t2) / 1000).toFixed(1)}s | total ${((t4 - t0) / 1000).toFixed(1)}s | provider: ${provider}`)
 
-    cleanupPdflatex(path.join(RESUMES_DIR, 'swe')).catch(() => {})
+    cleanupPdflatex(path.join(BUILD_DIR, 'swe')).catch(() => {})
     appendLedger({
       company:    companyName,
       title:      jobTitle,
@@ -577,6 +592,7 @@ app.post('/tailor', async (req, res) => {
       resumePath: `resumes/Rohan_Resume_${safe}.pdf`,
       clPath:     null,
     }).catch(err => console.error('appendLedger /tailor error:', err.message))
+    })
   } catch (err) {
     console.error('/tailor error:', err.message)
     res.status(500).json({ error: err.message })
@@ -594,6 +610,7 @@ app.post('/cover-letter', async (req, res) => {
   const outPdf = path.join(RESUMES_DIR, `Rohan_CL_${safe}.pdf`)
 
   try {
+    await withPipelineLock(async () => {
     const t0 = performance.now()
     console.log(`[/cover-letter] Company: ${companyName || '(none)'} | JD: ${jd.length} chars`)
 
@@ -654,6 +671,7 @@ app.post('/cover-letter', async (req, res) => {
       resumePath: null,
       clPath:     `resumes/Rohan_CL_${safe}.pdf`,
     }).catch(err => console.error('appendLedger /cover-letter error:', err.message))
+    })
   } catch (err) {
     console.error('/cover-letter error:', err.message)
     res.status(500).json({ error: err.message })
