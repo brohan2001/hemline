@@ -597,6 +597,70 @@ app.get('/stats', async (_req, res) => {
   res.json({ requests, models, byDay })
 })
 
+function normalizeArbeitnow(job) {
+  return {
+    id: `arbeitnow-${job.slug}`,
+    title: job.title ?? '',
+    company: job.company_name ?? '',
+    location: job.location ?? '',
+    url: job.url ?? '',
+    description: job.description ?? '',
+    tags: job.tags ?? [],
+    remote: job.remote ?? false,
+    source: 'arbeitnow'
+  }
+}
+
+function normalizeRemotive(job) {
+  return {
+    id: `remotive-${job.id}`,
+    title: job.title ?? '',
+    company: job.company_name ?? '',
+    location: job.candidate_required_location ?? '',
+    url: job.url ?? '',
+    description: job.description ?? '',
+    tags: job.tags ?? [],
+    remote: true,
+    source: 'remotive'
+  }
+}
+
+function normalizeJobicy(job) {
+  return {
+    id: `jobicy-${job.id}`,
+    title: job.jobTitle ?? '',
+    company: job.companyName ?? '',
+    location: job.jobGeo ?? '',
+    url: job.url ?? '',
+    description: job.jobDescription ?? '',
+    tags: Array.isArray(job.jobIndustry) ? job.jobIndustry : (job.jobIndustry ? [job.jobIndustry] : []),
+    remote: true,
+    source: 'jobicy'
+  }
+}
+
+app.get('/api/jobs', async (_req, res) => {
+  const results = await Promise.allSettled([
+    fetch('https://www.arbeitnow.com/api/job-board-api')
+      .then(r => r.json()).then(d => (d.data ?? []).map(normalizeArbeitnow)),
+    fetch('https://remotive.com/api/remote-jobs?category=software-dev&limit=50')
+      .then(r => r.json()).then(d => (d.jobs ?? []).map(normalizeRemotive)),
+    fetch('https://jobicy.com/api/v2/remote-jobs?geo=usa&industry=engineering&count=20')
+      .then(r => r.json()).then(d => (d.jobs ?? []).map(normalizeJobicy))
+  ])
+  const seen = new Set()
+  const jobs = []
+  for (const r of results) {
+    if (r.status !== 'fulfilled') continue
+    for (const job of r.value) {
+      if (!job.url || seen.has(job.url)) continue
+      seen.add(job.url)
+      jobs.push(job)
+    }
+  }
+  res.json({ count: jobs.length, jobs })
+})
+
 app.get('/applications', async (_req, res) => {
   const applications = await readLedger()
   res.json({ count: applications.length, applications })

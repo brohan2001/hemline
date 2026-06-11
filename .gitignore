@@ -10,3 +10,5 @@ resumes/build/
 logs/
 dist/
 .DS_Store
+tests/mocks/
+*.tex.bak

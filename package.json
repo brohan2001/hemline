@@ -9,8 +9,9 @@
     "start": "node --env-file=.env server.js",
     "dev": "nodemon --ignore resumes/ --exec 'node --env-file=.env' server.js",
     "test": "vitest run",
-    "test:live": "vitest run tests/live.test.js",
+    "test:live": "JSEEK_LIVE=1 vitest run tests/live.test.js",
     "test:ui": "vitest run tests/ui.test.js",
+    "test:ui-live": "JSEEK_LIVE=1 vitest run tests/ui_live.test.js",
     "benchmark": "node --env-file=.env scripts/benchmark-models.js",
     "build:firefox": "rm -rf dist/firefox && mkdir -p dist/firefox && cp manifest_firefox.json dist/firefox/manifest.json && cp background.js content_script.js site_configs.js h1b_data.json options.html options.js dist/firefox/"
   },
@@ -21,6 +22,7 @@
   "devDependencies": {
     "jsdom": "^29.1.1",
     "nodemon": "^3.1.0",
+    "playwright": "^1.60.0",
     "supertest": "^7.2.2",
     "vitest": "^4.1.7"
   }

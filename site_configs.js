@@ -157,6 +157,19 @@ var SITE_CONFIGS = {
     injectTarget:        '#jobdescSec',
     injectPosition:      'beforebegin',
   },
+  universal: {
+    slug:                'universal',
+    jobDescription:      null,
+    jobCards:            null,
+    jobTitle:            null,
+    companyName:         null,
+    filterSidebar:       null,
+    filterTagPills:      null,
+    drawerCompanyHeader: null,
+    drawerJobTitle:      null,
+    injectTarget:        null,
+    injectPosition:      'beforebegin',
+  },
 }
 
 var activeCfg = null
@@ -175,5 +188,5 @@ var detectSite = function() {
   if (host.includes('builtin'))           return SITE_CONFIGS.builtin
   if (host.includes('wellfound.com'))     return SITE_CONFIGS.wellfound
   if (host.includes('dice.com'))          return SITE_CONFIGS.dice
-  return null
+  return SITE_CONFIGS.universal
 }

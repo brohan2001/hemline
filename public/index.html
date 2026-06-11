@@ -10,10 +10,25 @@
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     background: #f9fafb;
     color: #111827;
-    max-width: 720px;
-    margin: 0 auto;
-    padding: 32px 20px;
+    height: 100vh;
+    display: grid;
+    grid-template-columns: 420px 1fr;
+    overflow: hidden;
   }
+  .col-left { border-right: 1px solid #e5e7eb; display: flex; flex-direction: column; overflow: hidden; background: #fff; }
+  .col-left-header { padding: 14px 14px 10px; border-bottom: 1px solid #e5e7eb; flex-shrink: 0; }
+  .stream-controls { display: flex; gap: 8px; align-items: center; }
+  .stream-controls input { flex: 1; }
+  #stream-status { font-size: 11px; color: #6b7280; margin-top: 6px; }
+  .job-stream { flex: 1; overflow-y: auto; padding: 8px; background: #f9fafb; }
+  .job-card { padding: 10px 12px; border: 1px solid #e5e7eb; border-radius: 6px; margin-bottom: 8px; cursor: pointer; background: #fff; transition: border-color 0.15s, background 0.15s; }
+  .job-card:hover { border-color: #3b82f6; background: #eff6ff; }
+  .job-card.selected { border-color: #1d4ed8; background: #dbeafe; }
+  .job-card-title { font-size: 13px; font-weight: 600; color: #111827; }
+  .job-card-company { font-size: 12px; color: #374151; margin-top: 2px; }
+  .job-card-meta { font-size: 11px; color: #6b7280; margin-top: 2px; }
+  .col-right { overflow-y: auto; padding: 32px 24px; }
+  .col-right-inner { max-width: 720px; }
   h1 { font-size: 20px; margin-bottom: 4px; }
   .sub { font-size: 13px; color: #6b7280; margin-bottom: 24px; }
   label { display: block; font-size: 12px; font-weight: 600; color: #374151; margin: 14px 0 4px; }
@@ -64,6 +79,18 @@
 </style>
 </head>
 <body>
+  <div class="col-left">
+    <div class="col-left-header">
+      <div class="stream-controls">
+        <input id="job-filter" placeholder="Filter jobs by keyword…">
+        <button id="refresh-jobs">Refresh</button>
+      </div>
+      <p id="stream-status"></p>
+    </div>
+    <div class="job-stream" id="job-stream"></div>
+  </div>
+  <div class="col-right">
+    <div class="col-right-inner">
   <h1>JSeek Enhancer</h1>
   <p class="sub">Local dashboard — paste a job description, generate tailored documents.</p>
   <p class="sub" id="health-line"></p>
@@ -115,6 +142,8 @@
       <thead><tr><th>Model</th><th>✓</th><th>✗</th></tr></thead>
       <tbody></tbody>
     </table>
+  </div>
+    </div>
   </div>
 
 <script>
@@ -322,9 +351,64 @@
     } catch { /* stats are best-effort */ }
   }
 
+  let allJobs = []
+
+  function escHtml(str) {
+    return String(str ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  }
+
+  function renderJobs() {
+    const q = $('job-filter').value.trim().toLowerCase()
+    const filtered = q
+      ? allJobs.filter(j => `${j.title} ${j.company} ${j.location} ${(j.tags ?? []).join(' ')}`.toLowerCase().includes(q))
+      : allJobs
+    $('stream-status').textContent = `${filtered.length} job${filtered.length === 1 ? '' : 's'}${q ? ' (filtered)' : ''}`
+    const stream = $('job-stream')
+    stream.innerHTML = ''
+    for (const job of filtered) {
+      const card = document.createElement('div')
+      card.className = 'job-card'
+      card.innerHTML = `
+        <div class="job-card-title">${escHtml(job.title)}</div>
+        <div class="job-card-company">${escHtml(job.company)}</div>
+        <div class="job-card-meta">${escHtml(job.location)}${job.remote ? ' · Remote' : ''} · ${escHtml(job.source)}</div>
+      `
+      card.addEventListener('click', () => {
+        document.querySelectorAll('.job-card.selected').forEach(c => c.classList.remove('selected'))
+        card.classList.add('selected')
+        const tmp = document.createElement('div')
+        tmp.innerHTML = job.description
+        $('jd').value = (tmp.textContent || job.description || '').trim()
+        $('company').value = job.company
+        $('title').value = job.title
+        setStatus(`Loaded "${job.title}" at ${job.company} — ready to tailor.`)
+      })
+      stream.appendChild(card)
+    }
+  }
+
+  async function loadJobs() {
+    $('stream-status').textContent = 'Loading jobs…'
+    $('refresh-jobs').disabled = true
+    try {
+      const resp = await fetch('/api/jobs')
+      const data = await resp.json()
+      allJobs = data.jobs ?? []
+      renderJobs()
+    } catch {
+      $('stream-status').textContent = 'Failed to load jobs — is the server up?'
+    } finally {
+      $('refresh-jobs').disabled = false
+    }
+  }
+
+  $('job-filter').addEventListener('input', renderJobs)
+  $('refresh-jobs').addEventListener('click', loadJobs)
+
   loadApplications()
   loadHealth()
   loadStats()
+  loadJobs()
 </script>
 </body>
 </html>

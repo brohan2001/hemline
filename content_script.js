@@ -119,6 +119,12 @@ injectStyle(`
 
 // ─── Feature 1: Action Buttons (Resume / Resume & CL) ────────────────────────
 function getDrawerContext(cfg) {
+  if (cfg.slug === 'universal') {
+    return {
+      companyName: getUniversalCompany(),
+      jobTitle:    getUniversalTitle()?.textContent?.trim() ?? document.title,
+    }
+  }
   if (cfg.drawerCompanyHeader) {
     const drawerHeader = findFirst(cfg.drawerCompanyHeader)
     const anchor = drawerHeader?.querySelector('a[href*="/company/"]')
@@ -128,8 +134,8 @@ function getDrawerContext(cfg) {
     }
   }
   return {
-    companyName: findFirst(cfg.companyName)?.textContent.trim() ?? '',
-    jobTitle:    findFirst(cfg.jobTitle)?.textContent.trim() ?? '',
+    companyName: cfg.companyName ? findFirst(cfg.companyName)?.textContent.trim() ?? '' : '',
+    jobTitle:    cfg.jobTitle ? findFirst(cfg.jobTitle)?.textContent.trim() ?? '' : '',
   }
 }
 
@@ -215,7 +221,7 @@ function makePillButton(text, tooltip) {
 function injectActionButtons(cfg) {
   if (document.getElementById('jseek-btn-row')) return
 
-  const jdEl = findFirst(cfg.jobDescription)
+  const jdEl = cfg.slug === 'universal' ? findUniversalElements() : findFirst(cfg.jobDescription)
   if (!jdEl) return
 
   const jobId = getJobId()
@@ -401,7 +407,8 @@ function injectActionButtons(cfg) {
   wrapper.appendChild(btnBoth)
   wrapper.appendChild(btnMessage)
   wrapper.appendChild(btnEmail)
-  findFirst(cfg.injectTarget)?.insertAdjacentElement(cfg.injectPosition, wrapper)
+  const target = cfg.injectTarget ? findFirst(cfg.injectTarget) : jdEl
+  target?.insertAdjacentElement(cfg.injectPosition ?? 'beforebegin', wrapper)
   applyHealthState()
 }
 
@@ -428,12 +435,16 @@ function fieldDescriptor(el) {
     .join(' ')
 }
 
-// React-based ATS forms (Greenhouse, Workday) ignore plain value assignment,
-// so we fire input + change events after setting it.
+// React replaces the input's value setter with a fiber-aware shim, so plain
+// assignment never reaches its state tracker. Calling the native prototype
+// setter then dispatching InputEvent makes React/Workday register the change.
 function setFieldValue(el, value) {
   el.focus()
-  el.value = value
-  el.dispatchEvent(new Event('input', { bubbles: true }))
+  const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype
+  const nativeSetter = Object.getOwnPropertyDescriptor(proto, 'value')?.set
+  if (nativeSetter) nativeSetter.call(el, value)
+  else el.value = value
+  el.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true }))
   el.dispatchEvent(new Event('change', { bubbles: true }))
   el.blur()
 }
@@ -467,6 +478,46 @@ function injectAutoFillButton() {
     setTimeout(() => { btn.textContent = 'Auto-Fill' }, 3000)
   })
   form.insertAdjacentElement('beforebegin', btn)
+}
+
+// ─── Feature: Universal Semantic Scraper (unmapped hosts) ────────────────────
+const JD_KEYWORDS = [
+  'requirements', 'responsibilities', 'qualifications', "what you'll do",
+  'benefits', 'about the role', "what we're looking for", 'you will',
+  'experience', 'skills', 'must have', 'nice to have',
+]
+
+function scoreElement(el) {
+  const text = el.innerText || ''
+  const len = text.length
+  if (len < 200 || len > 20000) return 0
+  const density = len / (el.innerHTML.length || 1)
+  const lower = text.toLowerCase()
+  const hits = JD_KEYWORDS.filter(k => lower.includes(k)).length
+  return density * hits * Math.log(len)
+}
+
+function findUniversalElements() {
+  let best = null
+  let bestScore = 0
+  for (const el of document.querySelectorAll('section, article, div, main')) {
+    const score = scoreElement(el)
+    if (score > bestScore) {
+      bestScore = score
+      best = el
+    }
+  }
+  return best
+}
+
+function getUniversalTitle() {
+  return document.querySelector('h1') ?? document.querySelector('h2') ?? null
+}
+
+function getUniversalCompany() {
+  return document.querySelector('meta[property="og:site_name"]')?.content
+    ?? document.querySelector('[class*="company"], [id*="company"]')?.textContent?.trim()
+    ?? ''
 }
 
 // ─── Feature 2: Enhanced Seniority Filter ────────────────────────────────────

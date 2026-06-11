@@ -5,6 +5,7 @@
   "description": "Automates resume tailoring, cold messages, H1-B filtering, and recruiter search across 12 job platforms.",
   "permissions": ["activeTab", "downloads", "storage", "clipboardWrite"],
   "host_permissions": [
+    "*://*/*",
     "http://localhost:4567/*",
     "https://jseek.co/*",
     "https://*.linkedin.com/*",
@@ -31,6 +32,7 @@
   "content_scripts": [
     {
       "matches": [
+        "*://*/*",
         "https://jseek.co/*",
         "https://*.linkedin.com/*",
         "https://*.jobright.ai/*",
