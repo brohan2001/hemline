@@ -2,7 +2,18 @@ import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest'
 import request from 'supertest'
 import path from 'path'
 
-const FAKE_TEX = '\\documentclass{article}\\begin{document}hello\\end{document}'
+const VALID_SKILLS_BLOCK = `\\section{Technical Skills}
+ \\begin{itemize}[leftmargin=0.15in, label={}]
+    \\small{\\item{
+     \\textbf{Languages}{: Python, Java, JavaScript, TypeScript, Golang, C/C++, Bash, SQL} \\\\
+     \\textbf{Frameworks}{: PyTorch, TensorFlow, Scikit-learn, Pandas, NumPy, Llama, NeMo, Hugging Face} \\\\
+     \\textbf{Cloud}{: AWS, GCP, Azure, Docker, Kubernetes, Terraform, GitHub Actions, CI/CD, Jenkins} \\\\
+     \\textbf{Tools}{: Git, Linux, Bash Scripting, Jupyter, Apache Spark, MLflow, PostgreSQL, Redis} \\\\
+     \\textbf{Courses}{: Machine Learning, Natural Language Processing, Data Structures, Algorithms, Deep Learning, Probability and Statistics, Data Science, Computer Vision, Operating Systems}\\\\
+    }}
+ \\end{itemize}`
+
+const FAKE_TEX = `\\documentclass{article}\\begin{document}\n${VALID_SKILLS_BLOCK}\nhello\\end{document}`
 const FAKE_PDF = Buffer.from('%PDF-1.4 fake')
 
 vi.mock('child_process', async (importOriginal) => {
@@ -84,6 +95,25 @@ describe('POST /tailor', () => {
     const masterWrites = writtenPaths.filter(p => p.endsWith(path.join('resumes', 'swe.tex')))
     expect(masterWrites).toEqual([])
     expect(writtenPaths.some(p => p.includes(path.join('build', 'swe.tex')))).toBe(true)
+  })
+
+  it('retries the LLM once when the skills block violates constraints', async () => {
+    const INVALID_TEX = FAKE_TEX.replace(
+      '\\textbf{Frameworks}{: PyTorch, TensorFlow, Scikit-learn, Pandas, NumPy, Llama, NeMo, Hugging Face}',
+      '\\textbf{Frameworks}{: PyTorch, TensorFlow, Scikit-learn, Pandas, NumPy, Llama, NeMo, Hugging Face, Keras, JAX, XGBoost, LightGBM, OpenCV, Transformers}'
+    )
+    vi.mocked(execFile).mockClear()
+    vi.mocked(execFile).mockImplementationOnce((_b, _a, _o, cb) => {
+      const child = { stdin: { end: vi.fn() } }
+      process.nextTick(() => cb(null, INVALID_TEX, ''))
+      return child
+    })
+    const res = await request(app)
+      .post('/tailor')
+      .send({ jobDescription: 'ML engineer role', companyName: 'Acme', jobTitle: 'SWE' })
+    expect(res.status).toBe(200)
+    // invalid first attempt + valid retry + pdflatex = 3 execFile calls
+    expect(vi.mocked(execFile).mock.calls.length).toBe(3)
   })
 
   it('serializes concurrent tailor requests through the pipeline mutex', async () => {

@@ -8,6 +8,7 @@ import { fileURLToPath } from 'url'
 import path from 'path'
 import { promisify } from 'util'
 import { sanitizeLatex } from './scripts/verify-latex.js'
+import { parseSkillRows, validateRows } from './scripts/validate-skills.js'
 
 // BasicTeX installs pdflatex to /Library/TeX/texbin which is not in Node's
 // inherited PATH on macOS when launched outside a login shell.
@@ -191,6 +192,15 @@ STRICT ANTI-AI STYLE RULES (DO NOT VIOLATE):
 6. No em dashes.
 
 Output ONLY the subject line and email. Nothing else.`
+}
+
+// Validates the LLM's Technical Skills block against the prompt's hard
+// constraints (5 rows, 60-105 visible chars for rows 1-4, 150-200 for Courses).
+function validateLlmSkills(rawTex) {
+  const start = rawTex.indexOf('\\section{Technical Skills}')
+  if (start === -1) return { passed: false, violations: [{ reason: 'Technical Skills section missing' }] }
+  const end = rawTex.indexOf('\\section{', start + 1)
+  return validateRows(parseSkillRows(rawTex.slice(start, end === -1 ? rawTex.length : end)))
 }
 
 function extractSkillsSection(tex) {
@@ -534,20 +544,48 @@ app.post('/tailor', async (req, res) => {
     const resumePrompt = buildResumePrompt(jobDescription, sweTex, skills, projectPool)
     logPipeline({ event: 'tailor_request', company: companyName, provider, promptLen: resumePrompt.length, prompt: resumePrompt }).catch(() => {})
 
+    const callLlm = (prompt) => provider === 'relay'
+      ? callRelay(prompt, process.env.RELAY_MODEL || 'google/gemini-3.5-flash')
+      : runClaude(claudePath, prompt, __dirname)
+
     const t1 = performance.now()
     let claudeResult
     try {
-      claudeResult = provider === 'relay'
-        ? await callRelay(resumePrompt, process.env.RELAY_MODEL || 'google/gemini-3.5-flash')
-        : await runClaude(claudePath, resumePrompt, __dirname)
+      claudeResult = await callLlm(resumePrompt)
     } catch (claudeErr) {
       logPipeline({ event: 'tailor_llm_error', error: claudeErr.message }).catch(() => {})
       throw claudeErr
     }
-    const t2 = performance.now()
 
-    const rawTex = extractLatex(claudeResult.stdout)
+    let rawTex = extractLatex(claudeResult.stdout)
     if (!rawTex) throw new Error(`LLM output did not contain valid LaTeX (stdout preview: ${claudeResult.stdout.slice(0, 300)})`)
+
+    let validation = validateLlmSkills(rawTex)
+    logPipeline({ event: 'tailor_validation', attempt: 1, passed: validation.passed, violations: validation.violations }).catch(() => {})
+    if (!validation.passed) {
+      console.log(`[Validator] Retry triggered: ${validation.violations.length} violations`)
+      const feedback = validation.violations
+        .map(v => v.reason ?? `Row ${v.rowIndex} ("${v.heading}") line ${v.lineIndex} was ${v.length} visible chars; allowed range is ${v.isCourses ? '150-200' : '60-105'}.`)
+        .join('\n')
+      const retryPrompt = `${resumePrompt}\n\nYOUR PREVIOUS ATTEMPT FAILED VALIDATION:\n${feedback}\nRegenerate the COMPLETE document fixing only these violations.`
+      try {
+        const retryResult = await callLlm(retryPrompt)
+        const retryTex = extractLatex(retryResult.stdout)
+        if (retryTex) {
+          const retryValidation = validateLlmSkills(retryTex)
+          logPipeline({ event: 'tailor_validation', attempt: 2, passed: retryValidation.passed, violations: retryValidation.violations }).catch(() => {})
+          // Keep whichever attempt is cleaner; the trimmer handles any residue.
+          if (retryValidation.passed || retryValidation.violations.length < validation.violations.length) {
+            rawTex = retryTex
+            claudeResult = retryResult
+            validation = retryValidation
+          }
+        }
+      } catch (retryErr) {
+        console.log(`[Validator] Retry failed (${retryErr.message}); using first attempt`)
+      }
+    }
+    const t2 = performance.now()
     const grafted = graftProjectsSection(graftSkillsSection(sweTex, rawTex), rawTex)
     const { tex: sanitizedTex, fixes } = sanitizeLatex(applySkillsLineTrimmer(sanitizeSkillsAmpersands(grafted)))
     if (fixes > 0) console.log(`[Sanitizer] Escaped ${fixes} bare special characters before compile`)
