@@ -36,6 +36,18 @@ Every relay call writes a JSON line to `logs/pipeline.log` (created automaticall
 - `relay_fail`: model, error message, stack trace
 - `tailor_request` / `cl_request` / `cold_email_request`: provider, full compiled prompt at request start
 - `tailor_llm_output` / `cl_llm_output` / `cold_email_output`: raw LLM output after completion
+- `tailor_validation`: per-attempt constraint check results (drives the one-shot LLM retry)
+- `tailor_match_score`: ATS keyword coverage score, matched and missing keywords
+- `request_complete` / `request_error`: per-request latency breakdown and failures (aggregated by `GET /stats`)
+
+## Server endpoints
+
+- `POST /tailor`, `POST /cover-letter` — PDF generation (serialized by a pipeline mutex; tailor returns `X-JSeek-Match-Score`)
+- `POST /cold-message`, `POST /cold-email` — text generation
+- `GET /` — local web dashboard (`public/index.html`)
+- `GET /health` — status, provider, RelayFreeLLM port check, pdflatex presence
+- `GET /applications`, `GET /applications/check?company=&title=` — ledger queries (duplicate guard uses a 30-day window)
+- `GET /stats` — aggregates from `logs/pipeline.log`
 
 ## `resumes/` directory discipline
 
