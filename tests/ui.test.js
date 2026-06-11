@@ -46,7 +46,8 @@ async function bootContentScript(slug) {
   const dom = new JSDOM(html, { url: PLATFORM_URLS[slug], runScripts: 'outside-only' })
 
   dom.window.chrome = chromeMock()
-  dom.window.fetch = () => Promise.resolve({ json: async () => ({}) })
+  // Healthy /health stub so pingHealth keeps the buttons enabled.
+  dom.window.fetch = () => Promise.resolve({ ok: true, json: async () => ({ status: 'ok' }) })
   dom.window.alert = () => {}
 
   dom.window.eval(siteConfigsCode)
@@ -66,11 +67,13 @@ describe('content script button injection across all 12 platforms', () => {
       const row = dom.window.document.getElementById('jseek-btn-row')
       expect(row, `[${slug}] jseek-btn-row was not injected`).not.toBeNull()
 
-      const labels = Array.from(row.querySelectorAll('button')).map(b => b.textContent)
+      const buttons = Array.from(row.querySelectorAll('button'))
+      const labels = buttons.map(b => b.textContent)
       expect(labels).toContain('Resume')
       expect(labels).toContain('Resume & CL')
       expect(labels).toContain('Message')
       expect(labels).toContain('Email')
+      expect(buttons.every(b => !b.disabled)).toBe(true)
       dom.window.close()
     })
   }

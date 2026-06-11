@@ -66,6 +66,7 @@
 <body>
   <h1>JSeek Enhancer</h1>
   <p class="sub">Local dashboard — paste a job description, generate tailored documents.</p>
+  <p class="sub" id="health-line"></p>
 
   <label for="jd">Job Description</label>
   <textarea id="jd" placeholder="Paste the raw job description here…"></textarea>
@@ -103,6 +104,15 @@
     </div>
     <table id="app-table">
       <thead><tr><th>Date</th><th>Company</th><th>Title</th><th>Resume</th><th>CL</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div class="panel" id="stats-panel" style="display:none">
+    <h2>Stats</h2>
+    <p class="sub" id="stats-cards"></p>
+    <table id="stats-models">
+      <thead><tr><th>Model</th><th>✓</th><th>✗</th></tr></thead>
       <tbody></tbody>
     </table>
   </div>
@@ -275,7 +285,46 @@
     downloadBlob(new Blob([csv], { type: 'text/csv' }), 'applications.csv')
   })
 
+  async function loadHealth() {
+    try {
+      const h = await (await fetch('/health')).json()
+      const parts = [`provider: ${h.provider}`]
+      parts.push(h.relayUp ? 'RelayFreeLLM: up' : 'RelayFreeLLM: down')
+      parts.push(h.pdflatexFound ? 'pdflatex: found' : 'pdflatex: MISSING')
+      const healthy = h.pdflatexFound && (h.provider !== 'relay' || h.relayUp)
+      $('health-line').innerHTML = `<span style="color:${healthy ? '#059669' : '#b91c1c'}">●</span> ${parts.join(' · ')}`
+    } catch { /* served by the same server, so this rarely fails */ }
+  }
+
+  async function loadStats() {
+    try {
+      const s = await (await fetch('/stats')).json()
+      const endpoints = Object.entries(s.requests ?? {})
+      const models = Object.entries(s.models ?? {})
+      if (endpoints.length === 0 && models.length === 0) return
+      $('stats-panel').style.display = 'block'
+      const errors = endpoints.reduce((n, [, r]) => n + r.errors, 0)
+      $('stats-cards').textContent = endpoints
+        .map(([ep, r]) => `${ep}: ${r.count} runs · avg ${(r.avgTotalMs / 1000).toFixed(1)}s`)
+        .concat([`errors: ${errors}`])
+        .join('  ·  ')
+      const tbody = $('stats-models').querySelector('tbody')
+      tbody.innerHTML = ''
+      for (const [model, m] of models.sort((a, b) => b[1].success - a[1].success)) {
+        const tr = document.createElement('tr')
+        for (const val of [model, m.success, m.fail]) {
+          const td = document.createElement('td')
+          td.textContent = val
+          tr.appendChild(td)
+        }
+        tbody.appendChild(tr)
+      }
+    } catch { /* stats are best-effort */ }
+  }
+
   loadApplications()
+  loadHealth()
+  loadStats()
 </script>
 </body>
 </html>

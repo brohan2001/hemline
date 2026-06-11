@@ -22,6 +22,8 @@ let h1bData = {}
 let seniorityFilterActive = false
 let h1bFilterActive = false
 let llmProvider = 'claude'
+let serverUp = true
+let jseekBusy = false
 
 const JOB_STATES = {}
 
@@ -148,6 +150,38 @@ async function callEndpoint(endpoint, payload) {
   return { blob: await resp.blob(), matchScore: resp.headers.get('X-JSeek-Match-Score') }
 }
 
+function applyHealthState() {
+  if (jseekBusy) return
+  const buttons = [
+    ...findAll('#jseek-btn-row button'),
+    ...findAll('#jseek-autofill-btn'),
+  ]
+  for (const btn of buttons) {
+    btn.disabled = !serverUp
+    if (!serverUp) {
+      if (!btn.dataset.jseekTitle) btn.dataset.jseekTitle = btn.title
+      btn.title = 'JSeek server offline — run npm start'
+    } else if (btn.dataset.jseekTitle) {
+      btn.title = btn.dataset.jseekTitle
+      delete btn.dataset.jseekTitle
+    }
+  }
+}
+
+async function pingHealth() {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 1500)
+  try {
+    const resp = await fetch(`${SERVER}/health`, { signal: controller.signal })
+    serverUp = resp.ok
+  } catch {
+    serverUp = false
+  } finally {
+    clearTimeout(timer)
+  }
+  applyHealthState()
+}
+
 async function confirmNotDuplicate(companyName, jobTitle) {
   try {
     const r = await fetch(`${SERVER}/applications/check?company=${encodeURIComponent(companyName)}&title=${encodeURIComponent(jobTitle)}`)
@@ -200,10 +234,12 @@ function injectActionButtons(cfg) {
   if (jobState.email === 'done') btnEmail.textContent = 'Email Opened ✓'
 
   function setBusy(busy) {
+    jseekBusy = busy
     btnResume.disabled  = busy
     btnBoth.disabled    = busy
     btnMessage.disabled = busy
     btnEmail.disabled   = busy
+    if (!busy) applyHealthState()
   }
 
   const setBothBusy = setBusy
@@ -364,6 +400,7 @@ function injectActionButtons(cfg) {
   wrapper.appendChild(btnMessage)
   wrapper.appendChild(btnEmail)
   findFirst(cfg.injectTarget)?.insertAdjacentElement(cfg.injectPosition, wrapper)
+  applyHealthState()
 }
 
 // ─── Feature: ATS Easy Apply Auto-Filler (Greenhouse / Lever / Workday) ──────
@@ -659,6 +696,9 @@ async function init() {
       resolve()
     })
   })
+
+  pingHealth()
+  setInterval(pingHealth, 30_000)
 
   runFeatures(cfg)
 

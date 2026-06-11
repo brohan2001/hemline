@@ -25,12 +25,18 @@ const BUILD_DIR = path.join(RESUMES_DIR, 'build')
 const LEDGER_PATH = path.join(RESUMES_DIR, 'applied_jobs.json')
 
 let claudePath = 'claude'
+let pdflatexPath = null
 if (process.env.NODE_ENV !== 'test') {
   try {
     claudePath = execSync('which claude').toString().trim()
   } catch {
     console.error('Warning: claude CLI not found on PATH. /tailor endpoint will fail.')
     claudePath = 'claude'
+  }
+  try {
+    pdflatexPath = execSync('which pdflatex').toString().trim()
+  } catch {
+    console.error('Warning: pdflatex not found on PATH. PDF compilation will fail.')
   }
 }
 
@@ -545,7 +551,51 @@ app.use(cors({ exposedHeaders: ['X-JSeek-Match-Score'] }))
 app.use(express.json({ limit: '2mb' }))
 app.use(express.static(path.join(__dirname, 'public')))
 
-app.get('/health', (_req, res) => res.json({ status: 'ok', claudePath }))
+app.get('/health', async (_req, res) => res.json({
+  status: 'ok',
+  claudePath,
+  pdflatexFound: pdflatexPath !== null,
+  provider: process.env.LLM_PROVIDER || 'claude',
+  relayUp: await checkPort(8000),
+}))
+
+app.get('/stats', async (_req, res) => {
+  let raw = ''
+  try { raw = await fs.readFile(PIPELINE_LOG, 'utf8') } catch { /* no log yet */ }
+
+  const requests = {}
+  const models = {}
+  const byDay = {}
+  for (const line of raw.split('\n')) {
+    let ev
+    try { ev = JSON.parse(line) } catch { continue }
+    if (ev.event === 'request_complete') {
+      const r = requests[ev.endpoint] ??= { count: 0, errors: 0, totalMs: 0, llmMs: 0, maxTotalMs: 0 }
+      r.count++
+      r.totalMs += ev.totalMs ?? 0
+      r.llmMs += ev.llmMs ?? 0
+      r.maxTotalMs = Math.max(r.maxTotalMs, ev.totalMs ?? 0)
+      const day = (ev.ts ?? '').slice(0, 10)
+      if (day) byDay[day] = (byDay[day] ?? 0) + 1
+    } else if (ev.event === 'request_error') {
+      const r = requests[ev.endpoint] ??= { count: 0, errors: 0, totalMs: 0, llmMs: 0, maxTotalMs: 0 }
+      r.errors++
+    } else if (ev.event === 'relay_success' && ev.model) {
+      const m = models[ev.model] ??= { success: 0, fail: 0 }
+      m.success++
+    } else if (ev.event === 'relay_fail' && ev.model) {
+      const m = models[ev.model] ??= { success: 0, fail: 0 }
+      m.fail++
+    }
+  }
+  for (const r of Object.values(requests)) {
+    r.avgTotalMs = r.count ? Math.round(r.totalMs / r.count) : 0
+    r.avgLlmMs = r.count ? Math.round(r.llmMs / r.count) : 0
+    delete r.totalMs
+    delete r.llmMs
+  }
+  res.json({ requests, models, byDay })
+})
 
 app.get('/applications', async (_req, res) => {
   const applications = await readLedger()
@@ -698,6 +748,7 @@ app.post('/tailor', async (req, res) => {
     const t4 = performance.now()
 
     console.log(`[/tailor] Done: LLM ${((t2 - t1) / 1000).toFixed(1)}s | pdflatex ${((t3 - t2) / 1000).toFixed(1)}s | total ${((t4 - t0) / 1000).toFixed(1)}s | provider: ${provider}`)
+    logPipeline({ event: 'request_complete', endpoint: '/tailor', company: companyName, provider, llmMs: Math.round(t2 - t1), pdfMs: Math.round(t3 - t2), totalMs: Math.round(t4 - t0) }).catch(() => {})
 
     cleanupPdflatex(path.join(BUILD_DIR, 'swe')).catch(() => {})
     appendLedger({
@@ -710,6 +761,7 @@ app.post('/tailor', async (req, res) => {
     })
   } catch (err) {
     console.error('/tailor error:', err.message)
+    logPipeline({ event: 'request_error', endpoint: '/tailor', error: err.message }).catch(() => {})
     res.status(500).json({ error: err.message, latexError: err.latexError ?? null })
   }
 })
@@ -776,6 +828,7 @@ app.post('/cover-letter', async (req, res) => {
     const t4 = performance.now()
 
     console.log(`[/cover-letter] Done: LLM ${((t2 - t1) / 1000).toFixed(1)}s | pdflatex ${((t3 - t2) / 1000).toFixed(1)}s | total ${((t4 - t0) / 1000).toFixed(1)}s | provider: ${clProvider}`)
+    logPipeline({ event: 'request_complete', endpoint: '/cover-letter', company: companyName, provider: clProvider, llmMs: Math.round(t2 - t1), pdfMs: Math.round(t3 - t2), totalMs: Math.round(t4 - t0) }).catch(() => {})
 
     fs.unlink(outTex).catch(() => {})
     fs.unlink(outPdf).catch(() => {})
@@ -790,6 +843,7 @@ app.post('/cover-letter', async (req, res) => {
     })
   } catch (err) {
     console.error('/cover-letter error:', err.message)
+    logPipeline({ event: 'request_error', endpoint: '/cover-letter', error: err.message }).catch(() => {})
     res.status(500).json({ error: err.message, latexError: err.latexError ?? null })
   }
 })

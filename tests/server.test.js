@@ -58,10 +58,40 @@ beforeEach(() => {
 })
 
 describe('GET /health', () => {
-  it('returns 200 ok', async () => {
+  it('returns 200 ok with provider and relay status', async () => {
     const res = await request(app).get('/health')
     expect(res.status).toBe(200)
     expect(res.body.status).toBe('ok')
+    expect(typeof res.body.provider).toBe('string')
+    expect(typeof res.body.relayUp).toBe('boolean')
+    expect(typeof res.body.pdflatexFound).toBe('boolean')
+  })
+})
+
+describe('GET /stats', () => {
+  it('aggregates request and model events from pipeline.log', async () => {
+    const LOG = [
+      JSON.stringify({ ts: '2026-06-10T10:00:00Z', event: 'request_complete', endpoint: '/tailor', totalMs: 10000, llmMs: 8000 }),
+      JSON.stringify({ ts: '2026-06-10T11:00:00Z', event: 'request_complete', endpoint: '/tailor', totalMs: 20000, llmMs: 16000 }),
+      JSON.stringify({ ts: '2026-06-10T12:00:00Z', event: 'request_error', endpoint: '/tailor', error: 'boom' }),
+      JSON.stringify({ ts: '2026-06-10T12:05:00Z', event: 'relay_fail', model: 'google/gemini-3.5-flash', error: 'x' }),
+      'not json',
+    ].join('\n')
+    vi.mocked(fsp.readFile).mockImplementationOnce(async () => LOG)
+    const res = await request(app).get('/stats')
+    expect(res.status).toBe(200)
+    expect(res.body.requests['/tailor'].count).toBe(2)
+    expect(res.body.requests['/tailor'].errors).toBe(1)
+    expect(res.body.requests['/tailor'].avgTotalMs).toBe(15000)
+    expect(res.body.models['google/gemini-3.5-flash'].fail).toBe(1)
+    expect(res.body.byDay['2026-06-10']).toBe(2)
+  })
+
+  it('returns empty aggregates when the log is missing', async () => {
+    vi.mocked(fsp.readFile).mockImplementationOnce(async () => { throw new Error('ENOENT') })
+    const res = await request(app).get('/stats')
+    expect(res.status).toBe(200)
+    expect(res.body.requests).toEqual({})
   })
 })
 
