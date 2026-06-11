@@ -108,6 +108,30 @@ describe('POST /tailor', () => {
   })
 })
 
+describe('LaTeX error surfacing', () => {
+  it('returns structured latexError when pdflatex fails', async () => {
+    vi.mocked(execFile)
+      .mockImplementationOnce((_b, _a, _o, cb) => {
+        const child = { stdin: { end: vi.fn() } }
+        process.nextTick(() => cb(null, FAKE_TEX, ''))
+        return child
+      })
+      .mockImplementationOnce((_b, _a, _o, cb) => {
+        const child = { stdin: { end: vi.fn() } }
+        const err = new Error('Command failed: pdflatex')
+        err.stdout = 'This is pdfTeX\n! Undefined control sequence.\n<recently read> \\badmacro\nl.42 \\badmacro\n'
+        process.nextTick(() => cb(err, err.stdout, ''))
+        return child
+      })
+    const res = await request(app)
+      .post('/tailor')
+      .send({ jobDescription: 'ML engineer role', companyName: 'Acme', jobTitle: 'SWE' })
+    expect(res.status).toBe(500)
+    expect(res.body.latexError.message).toBe('Undefined control sequence.')
+    expect(res.body.latexError.line).toBe(42)
+  })
+})
+
 describe('POST /cover-letter', () => {
   it('returns 400 when jd is missing', async () => {
     const res = await request(app).post('/cover-letter').send({})

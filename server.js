@@ -249,6 +249,21 @@ function graftSection(original, llmOutput, sectionName) {
 const graftSkillsSection   = (original, llmOutput) => graftSection(original, llmOutput, 'Technical Skills')
 const graftProjectsSection = (original, llmOutput) => graftSection(original, llmOutput, 'Projects')
 
+// Pulls the first "! <error>" line (and its l.<num> location) out of pdflatex
+// output so 500 responses can say what actually broke instead of "Command failed".
+function extractLatexError(stdout) {
+  const lines = (stdout ?? '').split('\n')
+  const idx = lines.findIndex(l => l.startsWith('! '))
+  if (idx === -1) return null
+  const context = lines.slice(idx, idx + 4).filter(Boolean)
+  const lineRef = context.find(l => /^l\.\d+/.test(l))
+  return {
+    message: lines[idx].slice(2),
+    line: lineRef ? parseInt(lineRef.slice(2)) : null,
+    excerpt: context.join('\n'),
+  }
+}
+
 // Reads the page count pdflatex reports, e.g. "Output written on swe.pdf (1 page, ...)".
 function parsePageCount(stdout) {
   const m = (stdout ?? '').match(/Output written on .*? \((\d+) page/)
@@ -554,6 +569,7 @@ app.post('/tailor', async (req, res) => {
     try {
       latexResult = await execFileAsync('pdflatex', pdflatexArgs, { cwd: __dirname, timeout: 60_000 })
     } catch (pdfErr) {
+      pdfErr.latexError = extractLatexError(pdfErr.stdout)
       console.error('pdflatex FAILED (tailor). stdout:\n' + (pdfErr.stdout || '(empty)'))
       console.error('pdflatex stderr:\n' + (pdfErr.stderr || '(empty)'))
       throw pdfErr
@@ -567,6 +583,7 @@ app.post('/tailor', async (req, res) => {
       try {
         latexResult = await execFileAsync('pdflatex', pdflatexArgs, { cwd: __dirname, timeout: 60_000 })
       } catch (pdfErr) {
+        pdfErr.latexError = extractLatexError(pdfErr.stdout)
         console.error('pdflatex FAILED (page guard). stdout:\n' + (pdfErr.stdout || '(empty)'))
         throw pdfErr
       }
@@ -595,7 +612,7 @@ app.post('/tailor', async (req, res) => {
     })
   } catch (err) {
     console.error('/tailor error:', err.message)
-    res.status(500).json({ error: err.message })
+    res.status(500).json({ error: err.message, latexError: err.latexError ?? null })
   }
 })
 
@@ -646,6 +663,7 @@ app.post('/cover-letter', async (req, res) => {
     try {
       await execFileAsync('pdflatex', pdflatexArgs, { cwd: __dirname, timeout: 60_000 })
     } catch (pdfErr) {
+      pdfErr.latexError = extractLatexError(pdfErr.stdout)
       console.error('pdflatex FAILED (cover-letter). stdout:\n' + (pdfErr.stdout || '(empty)'))
       console.error('pdflatex stderr:\n' + (pdfErr.stderr || '(empty)'))
       console.error(`Failing .tex preserved at: ${outTex}`)
@@ -674,7 +692,7 @@ app.post('/cover-letter', async (req, res) => {
     })
   } catch (err) {
     console.error('/cover-letter error:', err.message)
-    res.status(500).json({ error: err.message })
+    res.status(500).json({ error: err.message, latexError: err.latexError ?? null })
   }
 })
 

@@ -130,7 +130,9 @@
     })
     if (!resp.ok) {
       const err = await resp.json().catch(() => ({ error: resp.statusText }))
-      throw new Error(err.error ?? resp.statusText)
+      let msg = err.error ?? resp.statusText
+      if (err.latexError) msg += ` — LaTeX: ${err.latexError.message}${err.latexError.line ? ` (line ${err.latexError.line})` : ''}`
+      throw new Error(msg)
     }
     return resp
   }
