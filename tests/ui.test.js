@@ -78,7 +78,33 @@ describe('standalone background bridge', () => {
     for (let i = 0; i < 20 && !btn.textContent.includes('87%'); i++) await new Promise(r => setTimeout(r, 10))
     const tailor = dom.window.chrome.sent.find(m => m.op === 'TAILOR')
     expect(tailor.payload.jobDescription.length).toBeGreaterThan(0)
+    expect(tailor.payload.companyName).toBe('Acme Corp')
     expect(btn.textContent).toContain('87% match')
+    dom.window.close()
+  })
+
+  it('re-inserts the same button row after the page rebuilds mid-request', async () => {
+    const dom = await bootContentScript('greenhouse', {}, { TAILOR: new Promise(() => {}) })
+    const doc = dom.window.document
+    const resume = Array.from(doc.querySelectorAll('#hemline-btn-row button')).find(b => b.textContent === 'Resume')
+    resume.click()
+    await new Promise(r => setTimeout(r, 300))
+    // Simulate React re-rendering the document: a fresh body without our row.
+    const fresh = doc.body.cloneNode(true)
+    fresh.querySelector('#hemline-btn-row').remove()
+    doc.body.replaceWith(fresh)
+    for (let i = 0; i < 40 && !doc.getElementById('hemline-btn-row')?.isConnected; i++) await new Promise(r => setTimeout(r, 20))
+    expect(doc.querySelector('#hemline-btn-row button')).toBe(resume)
+    expect(doc.querySelectorAll('#hemline-btn-row').length).toBe(1)
+    expect(resume.textContent).toMatch(/Tailoring/)
+    dom.window.close()
+  })
+
+  it('reads the company from a Lever page title', async () => {
+    const dom = await bootContentScript('lever', {}, { TAILOR: { filename: 'x.pdf' } })
+    Array.from(dom.window.document.querySelectorAll('#hemline-btn-row button')).find(b => b.textContent === 'Resume').click()
+    for (let i = 0; i < 20 && !dom.window.chrome.sent.some(m => m.op === 'TAILOR'); i++) await new Promise(r => setTimeout(r, 10))
+    expect(dom.window.chrome.sent.find(m => m.op === 'TAILOR').payload.companyName).toBe('Acme Corp')
     dom.window.close()
   })
 

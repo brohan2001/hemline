@@ -9,7 +9,7 @@ import { fileURLToPath } from 'url'
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
 
 export const FILES = [
-  'background.js', 'content_script.js', 'site_configs.js', 'h1b_data.json',
+  'background.js', 'content_script.js', 'content.css', 'site_configs.js', 'h1b_data.json',
   'options.html', 'options.css', 'options.js',
   'offscreen.html', 'offscreen.js',
   'dashboard.html', 'dashboard.css', 'dashboard.js',

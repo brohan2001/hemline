@@ -107,7 +107,8 @@ export async function callOne(entry, prompt, deps = {}) {
   const p = PROVIDERS[entry.provider]
   if (!p) throw new Error(`Unknown provider: ${entry.provider}`)
   // Saved entries keep the model chosen when the key was added; providers retire
-  // models, so an unlisted one is ignored and a 404 (model gone) tries the next.
+  // models, so an unlisted one is ignored. A 404 (model gone) or 5xx (model
+  // overloaded) tries the provider's next model before giving up on the key.
   const first = p.models.includes(entry.model) ? entry.model : p.models[0]
   const models = [first, ...p.models.filter(m => m !== first)]
   for (const [i, model] of models.entries()) {
@@ -116,7 +117,8 @@ export async function callOne(entry, prompt, deps = {}) {
         ? await callAnthropic({ ...entry, model }, prompt, resolved)
         : await callOpenAiCompatible({ ...entry, model }, prompt, resolved)
     } catch (err) {
-      if (err?.status !== 404 || i === models.length - 1) throw err
+      const retryable = err?.status === 404 || err?.status >= 500
+      if (!retryable || i === models.length - 1) throw err
     }
   }
 }

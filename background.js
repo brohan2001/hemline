@@ -399,6 +399,7 @@ async function syncUniversalScript() {
       matches: ['*://*/*'],
       excludeMatches: chrome.runtime.getManifest().content_scripts.flatMap(cs => cs.matches),
       js: ['site_configs.js', 'content_script.js'],
+      css: ['content.css'],
       runAt: 'document_idle',
     }])
   } else if (!granted && existing.length > 0) {

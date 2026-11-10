@@ -70,7 +70,15 @@ describe('model selection', () => {
     expect(JSON.parse(fetchImpl.mock.calls[1][1].body).model).toBe('qwen/qwen3.8-27b')
   })
 
-  it('does not retry other models on non-404 errors', async () => {
+  it('tries the next model when one is overloaded (503)', async () => {
+    const fetchImpl = vi.fn()
+      .mockImplementationOnce(statusFetch(503))
+      .mockImplementationOnce(okFetch('from 2.5'))
+    expect(await callOne({ provider: 'gemini', key: 'g' }, 'p', { fetchImpl })).toBe('from 2.5')
+    expect(JSON.parse(fetchImpl.mock.calls[1][1].body).model).toBe('gemini-2.5-flash')
+  })
+
+  it('does not retry other models on rate limits', async () => {
     const fetchImpl = statusFetch(429)
     await expect(callOne({ provider: 'groq', key: 'q' }, 'p', { fetchImpl })).rejects.toThrow(/429/)
     expect(fetchImpl).toHaveBeenCalledTimes(1)

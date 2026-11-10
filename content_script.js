@@ -41,12 +41,6 @@ function getJobId() {
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
-function injectStyle(css) {
-  const s = document.createElement('style')
-  s.textContent = css
-  document.head.appendChild(s)
-}
-
 function findFirst(selector, root = document) {
   return root.querySelector(selector)
 }
@@ -64,63 +58,6 @@ function makeToggleButton(id, label) {
   return btn
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
-injectStyle(`
-  .hemline-btn-row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 6px;
-    margin: 8px 0;
-  }
-  .hemline-btn-row button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .hemline-toggle {
-    display: block;
-    width: 100%;
-    padding: 7px 10px;
-    margin: 6px 0;
-    background: #f3f4f6;
-    border: 1px solid #d1d5db;
-    border-radius: 5px;
-    font-size: 12px;
-    font-weight: 600;
-    color: #374151;
-    cursor: pointer;
-    text-align: left;
-    transition: background 0.15s;
-  }
-  .hemline-toggle[data-active="true"] {
-    background: #dbeafe;
-    border-color: #3b82f6;
-    color: #1d4ed8;
-  }
-  .hemline-toggle:hover { background: #e5e7eb; }
-
-  .hemline-h1b-badge {
-    display: inline-block;
-    font-size: 11px;
-    font-weight: 600;
-    padding: 2px 7px;
-    border-radius: 12px;
-    background: #d1fae5;
-    color: #065f46;
-    border: 1px solid #6ee7b7;
-    margin-left: 6px;
-    vertical-align: middle;
-    white-space: nowrap;
-  }
-  .hemline-h1b-badge.low {
-    background: #fee2e2;
-    color: #991b1b;
-    border-color: #fca5a5;
-  }
-
-  .hemline-hidden { display: none !important; }
-`)
 
 // ─── Feature 1: Action Buttons (Resume / Resume & CL) ────────────────────────
 function getDrawerContext(cfg) {
@@ -139,9 +76,18 @@ function getDrawerContext(cfg) {
     }
   }
   return {
-    companyName: cfg.companyName ? findFirst(cfg.companyName)?.textContent.trim() ?? '' : '',
+    companyName: cfg.companyName === 'title' ? companyFromTitle(cfg.slug, document.title)
+      : cfg.companyName ? findFirst(cfg.companyName)?.textContent.trim() ?? '' : '',
     jobTitle:    cfg.jobTitle ? findFirst(cfg.jobTitle)?.textContent.trim() ?? '' : '',
   }
+}
+
+// Greenhouse: "Job Application for <title> at <Company>"; Lever: "<Company> - <title>".
+function companyFromTitle(slug, title) {
+  const t = (title ?? '').trim()
+  if (slug === 'greenhouse') return t.match(/ at ([^|]+?)\s*$/)?.[1] ?? t
+  if (slug === 'lever') return t.split(' - ')[0].trim()
+  return t
 }
 
 function sanitizeForFilename(name) {
@@ -254,9 +200,13 @@ function makePillButton(text, tooltip) {
   const btn = document.createElement('button')
   btn.textContent = text
   btn.title = tooltip
-  btn.className = 'rounded-md px-3 py-1.5 text-xs font-medium border border-border-soft transition-colors hover:bg-border-soft cursor-pointer'
+  btn.className = 'hemline-pill'
   return btn
 }
+
+// React sites (Greenhouse) can rebuild the page after we inject, sometimes while a
+// request is running. Re-inserting the same row keeps its listeners and progress.
+let actionRow = null
 
 function injectActionButtons(cfg) {
   if (document.getElementById('hemline-btn-row')) return
@@ -267,10 +217,21 @@ function injectActionButtons(cfg) {
   const { companyName: ctxCompany, jobTitle: ctxTitle } = getDrawerContext(cfg)
   const jobId = (ctxCompany && ctxTitle) ? `${ctxCompany}::${ctxTitle}` : getJobId()
   const jobState = JOB_STATES[jobId] ?? {}
+  const target = cfg.injectTarget ? findFirst(cfg.injectTarget) : jdEl
+
+  const sameJob = actionRow?.dataset.jobId === jobId
+  const busyHere = hemlineBusy && actionRow?.dataset.href === location.href
+  if (actionRow && (sameJob || busyHere)) {
+    target?.insertAdjacentElement(cfg.injectPosition ?? 'beforebegin', actionRow)
+    return
+  }
 
   const wrapper = document.createElement('div')
   wrapper.id = 'hemline-btn-row'
   wrapper.className = 'hemline-btn-row'
+  wrapper.dataset.jobId = jobId
+  wrapper.dataset.href = location.href
+  actionRow = wrapper
 
   const btnResume  = makePillButton('Resume', 'Tailor Resume')
   const btnBoth    = makePillButton('Resume & CL', 'Tailor Resume & Cover Letter')
@@ -435,7 +396,6 @@ function injectActionButtons(cfg) {
   wrapper.appendChild(btnBoth)
   wrapper.appendChild(btnMessage)
   wrapper.appendChild(btnEmail)
-  const target = cfg.injectTarget ? findFirst(cfg.injectTarget) : jdEl
   target?.insertAdjacentElement(cfg.injectPosition ?? 'beforebegin', wrapper)
   applyHealthState()
 }
@@ -941,68 +901,6 @@ const CLEAN_ATS = ['greenhouse', 'lever', 'ashby']
 const selectedJobs = new Map()
 const progressJobs = new Map()
 
-injectStyle(`
-  /* jseek.co cards carry an absolute inset-0 overlay button that intercepts every
-     click — position:relative + a high z-index lifts our checkbox above it so
-     manual toggles actually land on the input. */
-  .hemline-select-box {
-    position: relative;
-    z-index: 20;
-    display: inline-flex;
-    align-items: center;
-    margin-right: 8px;
-    flex-shrink: 0;
-  }
-  .hemline-select-box input { position: relative; z-index: 20; width: 16px; height: 16px; cursor: pointer; accent-color: #3b82f6; }
-
-  #hemline-apply-bar {
-    position: fixed;
-    bottom: 16px;
-    right: 16px;
-    z-index: 2147483646;
-    width: 280px;
-    background: #ffffff;
-    border: 1px solid #d1d5db;
-    border-radius: 10px;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.18);
-    font-family: system-ui, sans-serif;
-    font-size: 13px;
-    color: #111827;
-    overflow: hidden;
-  }
-  #hemline-apply-bar .hemline-bar-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 10px 12px;
-    background: #f9fafb;
-    border-bottom: 1px solid #e5e7eb;
-    font-weight: 600;
-  }
-  #hemline-apply-bar .hemline-bar-actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 12px; }
-  #hemline-apply-bar button {
-    flex: 1 1 auto;
-    padding: 6px 8px;
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
-    background: #f3f4f6;
-    font-size: 12px;
-    font-weight: 600;
-    color: #374151;
-    cursor: pointer;
-  }
-  #hemline-apply-bar button.primary { background: #2563eb; border-color: #2563eb; color: #fff; flex-basis: 100%; }
-  #hemline-apply-bar button:disabled { opacity: 0.5; cursor: not-allowed; }
-  #hemline-apply-bar .hemline-skip { display: flex; align-items: center; gap: 6px; padding: 0 12px 8px; font-size: 12px; color: #6b7280; }
-  #hemline-apply-progress { max-height: 200px; overflow-y: auto; border-top: 1px solid #e5e7eb; }
-  #hemline-apply-progress:empty { display: none; }
-  .hemline-prog-row { display: flex; justify-content: space-between; gap: 8px; padding: 6px 12px; border-bottom: 1px solid #f3f4f6; }
-  .hemline-prog-row .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .hemline-prog-row .s { flex-shrink: 0; font-weight: 600; font-size: 11px; }
-  .hemline-prog-row .s.submitted { color: #047857; }
-  .hemline-prog-row .s.needs_review { color: #b45309; }
-  .hemline-prog-row .s.failed, .hemline-prog-row .s.duplicate { color: #b91c1c; }
-`)
 
 function showParam() {
   return new URLSearchParams(location.search).get('show')
@@ -1386,7 +1284,9 @@ async function init() {
     clearTimeout(runTimer)
     runTimer = setTimeout(() => runFeatures(cfg), 150)
   })
-  observer.observe(document.body, { childList: true, subtree: true })
+  // Observe the document, not body: React apps that fail hydration replace
+  // <body>, which would silently detach an observer bound to the old one.
+  observer.observe(document, { childList: true, subtree: true })
 }
 
 init()
