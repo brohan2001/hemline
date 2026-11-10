@@ -61,6 +61,8 @@ It listens on **http://localhost:4567**. On startup it auto-spawns the RelayFree
 | `RELAY_DIR` | `~/Documents/RelayFreeLLM` | RelayFreeLLM repo path for auto-spawn |
 | `CLAUDE_MODEL` | _(default Sonnet)_ | Override Claude CLI model |
 
+The server reads your resume from `resumes/` (gitignored, so it stays private). On a fresh clone, create it from the blank templates: copy `templates/resume_template.tex` to `resumes/swe.tex`, `templates/cover_letter_template.tex` to `resumes/cover_letter_template.tex`, and `templates/project_pool_sample.tex` to `resumes/project_pool.tex`, then add one or more `resumes/skills_*.txt` pools.
+
 ### Endpoints
 
 | Endpoint | What it does |
@@ -228,7 +230,7 @@ server.js                  Optional local backend (pdflatex, Claude CLI / RelayF
 jobstream.js               Company-board scraper + scorer (used by server and feed build)
 public/index.html          Local-server version of the dashboard
 data/                      companies.json (ATS board tokens), visa/role keyword lists
-resumes/                   Local-server master resume, templates, pools, ledger
+resumes/                   Local-server master resume, pools, ledger (gitignored, private)
 tests/                     Unit, mock-UI, live, and Playwright suites (incl. extension E2E)
 docs/                      architecture.md, publishing.md, workflow.md, relay setup
 ```
