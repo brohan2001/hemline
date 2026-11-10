@@ -4,6 +4,8 @@ A browser extension (Chrome MV3 + Firefox) that tailors your LaTeX resume and co
 
 Click **Resume** on a job page. The extension reads the job description, asks your AI provider to choose the matching skills and projects, compiles the PDF **inside your browser** (WebAssembly pdfTeX), scores the ATS keyword match, and saves the file to Downloads in about 30 seconds.
 
+![Hemline demo: tailoring a resume from a job posting](docs/demo.gif)
+
 - **No server, no account.** Users bring their own key: Claude (Anthropic API) or Cerebras, or free Gemini or Groq keys. Keys are tried in order and fall through on rate limits.
 - **Everything stays local.** Keys, resume, profile and application history live in the browser's extension storage.
 - **Live job feed.** A dashboard of new US tech postings from about 2,400 company job boards, rebuilt every 30 minutes by GitHub Actions and served from GitHub Pages.
