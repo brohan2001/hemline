@@ -17,6 +17,7 @@
     "build": "node scripts/build-extension.mjs all --zip",
     "build:chrome": "node scripts/build-extension.mjs chrome",
     "build:firefox": "node scripts/build-extension.mjs firefox",
+    "build:amo": "npm run vendor:sdk && node scripts/build-extension.mjs firefox --zip",
     "build:texmf": "node scripts/texlive/build-texmf.mjs",
     "vendor:sdk": "esbuild node_modules/@anthropic-ai/sdk/index.mjs --bundle --format=esm --platform=browser --minify --outfile=vendor/anthropic-sdk.js",
     "test:e2e": "node scripts/build-extension.mjs chrome && HEMLINE_E2E=1 vitest run tests/extension.e2e.test.js"

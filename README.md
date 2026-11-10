@@ -10,6 +10,22 @@ Click **Resume** on a job page. The extension reads the job description, asks yo
 
 Publishing to the Chrome Web Store and Firefox Add-ons, plus the GitHub Pages setup, is covered in [`docs/publishing.md`](docs/publishing.md).
 
+### Building the Firefox add-on from source (for AMO reviewers)
+
+Requirements: macOS or Linux with Node.js 20 or newer (verified with Node 26.7.0 and npm 11.19.0; install from [nodejs.org](https://nodejs.org) or `brew install node`) and the `zip` command (preinstalled on macOS and most Linux distributions).
+
+```bash
+npm ci              # installs the exact versions pinned in package-lock.json
+npm run build:amo   # rebuilds vendor/anthropic-sdk.js, then builds the add-on
+```
+
+`npm run build:amo` does two things:
+
+1. `npm run vendor:sdk` bundles `@anthropic-ai/sdk` 1.7.0 from `node_modules` into `vendor/anthropic-sdk.js` with esbuild 0.28. The result is byte-identical to the committed file.
+2. `node scripts/build-extension.mjs firefox --zip` copies the runtime files and `manifest_firefox.json` into `dist/firefox/` and zips them as `dist/hemline-firefox.zip`. These are the files of the submitted add-on.
+
+All other extension code is hand-written and unminified. The remaining third-party files are used unchanged except where noted: `vendor/swiftlatex/` is the SwiftLaTeX PdfTeX engine, release v20022022 (AGPL-3.0), with one patch described in the header comment of `swiftlatexpdftex.js`; `vendor/texlive/` holds TeX Live fonts, packages and a prebuilt pdfTeX format (see [`docs/publishing.md`](docs/publishing.md) to regenerate them).
+
 The original **local server** (`server.js`: pdflatex, Claude CLI, RelayFreeLLM) still works as an optional developer backend, described in section 1 below.
 
 ---
