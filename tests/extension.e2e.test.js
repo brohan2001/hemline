@@ -72,6 +72,18 @@ run('built extension (Chromium)', () => {
     expect((await bg('STATUS')).result).toEqual({ backend: 'extension', hasKey: false, hasResume: false })
   })
 
+  it('imports profile and pools from a settings JSON file', async () => {
+    const backup = { hemline: 1, profile: { firstName: 'Alex', lastName: 'Chen', city: 'Denver', bogus: 'x' }, projectPool: '%---PROJECT: Demo---', skillPools: 'Go, Rust' }
+    await page.setInputFiles('#import-file', { name: 'hemline-settings.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(backup)) })
+    await page.waitForFunction(() => document.getElementById('backup-status').textContent.includes('Imported'))
+    expect(await page.inputValue('#firstName')).toBe('Alex')
+    expect(await page.inputValue('#city')).toBe('Denver')
+    expect(await page.inputValue('#skill-pool')).toBe('Go, Rust')
+    const stored = await page.evaluate(() => chrome.storage.local.get(['profile', 'projectPool']))
+    expect(stored.profile).toEqual({ firstName: 'Alex', lastName: 'Chen', city: 'Denver' })
+    expect(stored.projectPool).toBe('%---PROJECT: Demo---')
+  })
+
   it('compiles the bundled template to a one-page PDF with WASM pdfTeX', async () => {
     const { result, ok, error } = await bg('PREVIEW_TEX', { tex: TEMPLATE.replace('{{NAME}}', 'Jane Doe').replace('{{CONTACT_LINE}}', 'jane@example.com') })
     expect(error).toBeUndefined()

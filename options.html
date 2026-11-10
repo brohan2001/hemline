@@ -239,6 +239,12 @@
       <button id="export-ledger" class="secondary">Export application history (JSON)</button>
       <span id="ledger-count" class="sub"></span>
     </div>
+    <p class="sub">Back up or move your profile, resume and pools. API keys are never exported.</p>
+    <div class="actions">
+      <button id="export-settings" class="secondary">Export settings</button>
+      <label class="file-btn secondary">Import settings<input id="import-file" type="file" accept=".json,application/json" hidden></label>
+      <span id="backup-status" class="status"></span>
+    </div>
   </section>
 </main>
 <script type="module" src="options.js"></script>

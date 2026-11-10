@@ -4,6 +4,63 @@
 
 export const SETTINGS_KEYS = ['llmKeys', 'profile', 'resumeTex', 'projectPool', 'skillPools', 'clTemplate', 'backend']
 
+export const PROFILE_FIELDS = [
+  'firstName', 'lastName', 'email', 'phone', 'linkedin', 'github', 'website', 'skills', 'highlights',
+  'city', 'state', 'stateAbbr', 'zip', 'country',
+  'workAuthorization', 'requireSponsorship',
+  'yearsExperience', 'startDate',
+  'educationLevel', 'university', 'major', 'graduationYear', 'gpa',
+  'salaryMin', 'salaryMax',
+  'gender', 'race', 'veteranStatus',
+]
+
+// ─── Settings backup (Options → Export / Import settings) ────────────────────
+
+// API keys stay out of exports so a shared backup never leaks them; imports
+// still accept llmKeys for users who add them by hand.
+export function buildSettingsBackup(s) {
+  const backup = { hemline: 1 }
+  if (s.profile && Object.keys(s.profile).length) backup.profile = s.profile
+  for (const k of ['resumeTex', 'projectPool']) if (s[k]?.trim()) backup[k] = s[k]
+  if (s.skillPools && Object.keys(s.skillPools).length) backup.skillPools = s.skillPools
+  return backup
+}
+
+export function parseSettingsBackup(text, providers) {
+  let data
+  try { data = JSON.parse(text) } catch { throw new Error('Not a valid JSON file.') }
+  if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Expected a JSON object.')
+
+  const out = {}
+  if (data.profile !== undefined) {
+    if (typeof data.profile !== 'object' || Array.isArray(data.profile)) throw new Error('"profile" must be an object.')
+    out.profile = Object.fromEntries(PROFILE_FIELDS
+      .map(f => [f, data.profile[f] == null ? '' : String(data.profile[f]).trim()])
+      .filter(([, v]) => v))
+  }
+  if (data.resumeTex !== undefined) {
+    if (typeof data.resumeTex !== 'string' || !data.resumeTex.includes('\\documentclass')) throw new Error('"resumeTex" must be a LaTeX document.')
+    out.resumeTex = data.resumeTex
+  }
+  if (data.projectPool !== undefined) {
+    if (typeof data.projectPool !== 'string') throw new Error('"projectPool" must be a string.')
+    out.projectPool = data.projectPool
+  }
+  if (data.skillPools !== undefined) {
+    const pools = typeof data.skillPools === 'string' ? { 'skills_pool.txt': data.skillPools } : data.skillPools
+    if (!pools || typeof pools !== 'object' || Array.isArray(pools)) throw new Error('"skillPools" must be a string or an object.')
+    out.skillPools = Object.fromEntries(Object.entries(pools).filter(([, v]) => typeof v === 'string' && v.trim()))
+  }
+  if (data.llmKeys !== undefined) {
+    if (!Array.isArray(data.llmKeys)) throw new Error('"llmKeys" must be an array.')
+    out.llmKeys = data.llmKeys
+      .filter(k => k && providers[k.provider] && typeof k.key === 'string' && k.key.trim())
+      .map(k => ({ provider: k.provider, key: k.key.trim(), model: providers[k.provider].models.includes(k.model) ? k.model : providers[k.provider].models[0] }))
+  }
+  if (Object.keys(out).length === 0) throw new Error('Nothing to import: expected profile, resumeTex, projectPool, skillPools or llmKeys.')
+  return out
+}
+
 export async function getSettings() {
   return chrome.storage.local.get(SETTINGS_KEYS)
 }

@@ -1,15 +1,8 @@
 import { PROVIDERS } from './llm.js'
 import { callBackground, base64ToBlobUrl } from './bridge.js'
+import { PROFILE_FIELDS, SETTINGS_KEYS, buildSettingsBackup, parseSettingsBackup } from './store.js'
 
-const FIELDS = [
-  'firstName', 'lastName', 'email', 'phone', 'linkedin', 'github', 'website', 'skills', 'highlights',
-  'city', 'state', 'stateAbbr', 'zip', 'country',
-  'workAuthorization', 'requireSponsorship',
-  'yearsExperience', 'startDate',
-  'educationLevel', 'university', 'major', 'graduationYear', 'gpa',
-  'salaryMin', 'salaryMax',
-  'gender', 'race', 'veteranStatus',
-]
+const FIELDS = PROFILE_FIELDS
 const SKILL_POOL_NAME = 'skills_pool.txt'
 
 const $ = (id) => document.getElementById(id)
@@ -248,12 +241,31 @@ $('backend').addEventListener('change', async (e) => {
   await chrome.storage.local.set({ backend: e.target.value })
 })
 
-$('export-ledger').addEventListener('click', async () => {
-  const ledger = await callBackground('GET_LEDGER')
-  const url = URL.createObjectURL(new Blob([JSON.stringify(ledger, null, 2)], { type: 'application/json' }))
-  const a = Object.assign(document.createElement('a'), { href: url, download: 'hemline-applications.json' })
-  a.click()
+$('export-ledger').addEventListener('click', async () => download('hemline-applications.json', await callBackground('GET_LEDGER')))
+
+function download(name, data) {
+  const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }))
+  Object.assign(document.createElement('a'), { href: url, download: name }).click()
   setTimeout(() => URL.revokeObjectURL(url), 10_000)
+}
+
+$('export-settings').addEventListener('click', async () => {
+  download('hemline-settings.json', buildSettingsBackup(await chrome.storage.local.get(SETTINGS_KEYS)))
+  flash($('backup-status'), 'Exported (API keys are not included)')
+})
+
+$('import-file').addEventListener('change', async (e) => {
+  const file = e.target.files?.[0]
+  e.target.value = ''
+  if (!file) return
+  try {
+    const data = parseSettingsBackup(await file.text(), PROVIDERS)
+    await chrome.storage.local.set(data)
+    await init()
+    flash($('backup-status'), `Imported ${Object.keys(data).join(', ')} ✓`)
+  } catch (err) {
+    flash($('backup-status'), `Import failed: ${err.message}`, true)
+  }
 })
 
 // ─── Boot ────────────────────────────────────────────────────────────────────
