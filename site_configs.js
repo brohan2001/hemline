@@ -162,7 +162,7 @@ var SITE_CONFIGS = {
     jobDescription:      '[class*="ashby-job-posting-description"], [class*="job-description"]',
     jobCards:            null,
     jobTitle:            'h1[class*="title"], h1',
-    companyName:         '[class*="company"], [class*="organization"]',
+    companyName:         'title',
     filterSidebar:       null,
     filterTagPills:      null,
     drawerCompanyHeader: null,

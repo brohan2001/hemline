@@ -23,7 +23,7 @@ export const PROVIDERS = {
     label: 'Groq',
     keyUrl: 'https://console.groq.com/keys',
     url: 'https://api.groq.com/openai/v1/chat/completions',
-    models: ['openai/gpt-oss-120b', 'qwen/qwen3.8-27b'],
+    models: ['openai/gpt-oss-120b', 'openai/gpt-oss-20b'],
     free: true,
   },
   cerebras: {
@@ -86,6 +86,7 @@ async function callOpenAiCompatible({ provider, key, model }, prompt, { fetchImp
     const body = await res.text().catch(() => '')
     const err = new Error(`${PROVIDERS[provider].label} HTTP ${res.status}: ${body.slice(0, 200)}`)
     err.status = res.status
+    err.retryAfter = retryAfterSeconds(res.headers, body)
     throw err
   }
   const data = await res.json()
@@ -93,6 +94,18 @@ async function callOpenAiCompatible({ provider, key, model }, prompt, { fetchImp
   if (!text) throw new Error(`${PROVIDERS[provider].label} returned no content`)
   return text
 }
+
+// Groq sends a Retry-After header; Gemini puts "retryDelay": "23s" in the body.
+function retryAfterSeconds(headers, body) {
+  const header = Number(headers?.get?.('retry-after'))
+  if (Number.isFinite(header) && header > 0) return header
+  const delay = body.match(/"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"/)?.[1]
+  return delay ? Number(delay) : null
+}
+
+// Groq's free tier is 8k tokens/min per model and one tailoring call uses ~7k, so
+// back-to-back requests routinely need a ~45 s wait.
+const MAX_RATE_LIMIT_WAIT_S = 60
 
 export function describeError(err) {
   if (err instanceof Anthropic.AuthenticationError || err?.status === 401 || err?.status === 403) return 'invalid API key'
@@ -108,21 +121,33 @@ export async function callOne(entry, prompt, deps = {}) {
     fetchImpl: deps.fetchImpl ?? ((...a) => fetch(...a)),
     fast: deps.fast ?? true,
   }
+  const sleep = deps.sleep ?? (s => new Promise(r => setTimeout(r, s * 1000)))
   const p = PROVIDERS[entry.provider]
   if (!p) throw new Error(`Unknown provider: ${entry.provider}`)
   // Saved entries keep the model chosen when the key was added; providers retire
-  // models, so an unlisted one is ignored. A 404 (model gone) or 5xx (model
-  // overloaded) tries the provider's next model before giving up on the key.
+  // models, so an unlisted one is ignored. A 404 (model gone), 429 (free-tier
+  // quotas are per model at Google and Groq) or 5xx (overloaded) tries the
+  // provider's next model before giving up on the key.
   const first = p.models.includes(entry.model) ? entry.model : p.models[0]
   const models = [first, ...p.models.filter(m => m !== first)]
+  const call = model => entry.provider === 'anthropic'
+    ? callAnthropic({ ...entry, model }, prompt, resolved)
+    : callOpenAiCompatible({ ...entry, model }, prompt, resolved)
+  const limited = []
   for (const [i, model] of models.entries()) {
     try {
-      return entry.provider === 'anthropic'
-        ? await callAnthropic({ ...entry, model }, prompt, resolved)
-        : await callOpenAiCompatible({ ...entry, model }, prompt, resolved)
+      return await call(model)
     } catch (err) {
-      const retryable = err?.status === 404 || err?.status >= 500
-      if (!retryable || i === models.length - 1) throw err
+      if (err?.status === 429) limited.push({ model, wait: err.retryAfter })
+      const retryable = err?.status === 404 || err?.status === 429 || err?.status >= 500
+      if (!retryable) throw err
+      if (i < models.length - 1) continue
+      // Every model is rate-limited: per-minute free-tier windows reset within a
+      // minute, so wait once rather than fail back-to-back requests.
+      const soonest = limited.filter(l => l.wait != null).sort((a, b) => a.wait - b.wait)[0]
+      if (limited.length !== models.length || !soonest || soonest.wait > MAX_RATE_LIMIT_WAIT_S) throw err
+      await sleep(soonest.wait + 0.5)
+      return call(soonest.model)
     }
   }
 }

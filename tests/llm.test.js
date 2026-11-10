@@ -21,17 +21,16 @@ describe('callLlm cascade', () => {
   })
 
   it('falls through a rate-limited key to the next one', async () => {
-    const fetchImpl = vi.fn()
-      .mockImplementationOnce(statusFetch(429))
-      .mockImplementationOnce(okFetch('from groq'))
+    const fetchImpl = vi.fn((url, init) => (url.includes('googleapis') ? statusFetch(429) : okFetch('from groq'))(url, init))
     const onSuccess = vi.fn()
     const text = await callLlm('p', [
       { provider: 'gemini', key: 'g' },
       { provider: 'groq', key: 'q' },
     ], { fetchImpl, onSuccess })
     expect(text).toBe('from groq')
-    expect(fetchImpl).toHaveBeenCalledTimes(2)
-    expect(fetchImpl.mock.calls[1][0]).toContain('api.groq.com')
+    // Both Gemini models are tried (quotas are per model) before moving to Groq.
+    expect(fetchImpl).toHaveBeenCalledTimes(3)
+    expect(fetchImpl.mock.calls[2][0]).toContain('api.groq.com')
     expect(onSuccess).toHaveBeenCalledWith(expect.objectContaining({ provider: 'groq' }))
   })
 
@@ -67,7 +66,7 @@ describe('model selection', () => {
       .mockImplementationOnce(okFetch('from fallback'))
     const text = await callOne({ provider: 'groq', key: 'q' }, 'p', { fetchImpl })
     expect(text).toBe('from fallback')
-    expect(JSON.parse(fetchImpl.mock.calls[1][1].body).model).toBe('qwen/qwen3.8-27b')
+    expect(JSON.parse(fetchImpl.mock.calls[1][1].body).model).toBe('openai/gpt-oss-20b')
   })
 
   it('tries the next model when one is overloaded (503)', async () => {
@@ -78,9 +77,36 @@ describe('model selection', () => {
     expect(JSON.parse(fetchImpl.mock.calls[1][1].body).model).toBe('gemini-2.5-flash')
   })
 
-  it('does not retry other models on rate limits', async () => {
-    const fetchImpl = statusFetch(429)
-    await expect(callOne({ provider: 'groq', key: 'q' }, 'p', { fetchImpl })).rejects.toThrow(/429/)
+  it('tries the next model when one is rate-limited (quotas are per model)', async () => {
+    const fetchImpl = vi.fn()
+      .mockImplementationOnce(statusFetch(429))
+      .mockImplementationOnce(okFetch('from 20b'))
+    expect(await callOne({ provider: 'groq', key: 'q' }, 'p', { fetchImpl })).toBe('from 20b')
+  })
+
+  it('waits out a short rate limit when every model is limited, then retries once', async () => {
+    const limited = (after) => vi.fn(async () => ({ ok: false, status: 429, headers: { get: h => (h === 'retry-after' ? String(after) : null) }, text: async () => 'slow down' }))
+    const fetchImpl = vi.fn()
+      .mockImplementationOnce(limited(12))
+      .mockImplementationOnce(limited(4))
+      .mockImplementationOnce(okFetch('after wait'))
+    const sleep = vi.fn(async () => {})
+    expect(await callOne({ provider: 'groq', key: 'q' }, 'p', { fetchImpl, sleep })).toBe('after wait')
+    expect(sleep).toHaveBeenCalledWith(4.5)
+    expect(JSON.parse(fetchImpl.mock.calls[2][1].body).model).toBe('openai/gpt-oss-20b')
+  })
+
+  it('reads Gemini retryDelay from the body and gives up on long waits', async () => {
+    const body = JSON.stringify([{ error: { details: [{ retryDelay: '3600s' }] } }])
+    const fetchImpl = vi.fn(async () => ({ ok: false, status: 429, text: async () => body }))
+    const sleep = vi.fn(async () => {})
+    await expect(callOne({ provider: 'gemini', key: 'g' }, 'p', { fetchImpl, sleep })).rejects.toThrow(/429/)
+    expect(sleep).not.toHaveBeenCalled()
+  })
+
+  it('does not retry other models on an invalid key', async () => {
+    const fetchImpl = statusFetch(401)
+    await expect(callOne({ provider: 'groq', key: 'q' }, 'p', { fetchImpl })).rejects.toThrow(/401/)
     expect(fetchImpl).toHaveBeenCalledTimes(1)
   })
 })

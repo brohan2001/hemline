@@ -36,7 +36,7 @@ export function chromeMock(storageData = {}, responses = {}) {
     },
     storage: {
       local: {
-        get: (_key, cb) => cb(storageData),
+        get: (_key, cb) => (cb ? cb(storageData) : Promise.resolve(storageData)),
         set: () => {},
       },
     },

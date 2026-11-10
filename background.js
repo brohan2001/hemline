@@ -177,6 +177,8 @@ async function coverLetter(p, { download = true } = {}) {
     out = { bytes: pdf, filename: `${ctx.filePrefix}_CL_${sanitizeFilename(p.companyName)}.pdf` }
   }
   await savePdf('coverLetter', out.bytes)
+  // Auto-fill attaches this letter only on the same company's form (it names the company).
+  await chrome.storage.local.set({ coverLetterMeta: { company: p.companyName ?? '', at: Date.now() } })
   if (download) await downloadPdf(out.bytes, out.filename)
   return { filename: out.filename }
 }

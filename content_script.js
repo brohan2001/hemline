@@ -82,9 +82,11 @@ function getDrawerContext(cfg) {
   }
 }
 
-// Greenhouse: "Job Application for <title> at <Company>"; Lever: "<Company> - <title>".
+// Greenhouse: "Job Application for <title> at <Company>"; Lever: "<Company> - <title>";
+// Ashby: "<title> @ <Company>".
 function companyFromTitle(slug, title) {
   const t = (title ?? '').trim()
+  if (slug === 'ashby') return t.match(/@\s*([^@]+?)\s*$/)?.[1] ?? t
   if (slug === 'greenhouse') return t.match(/ at ([^|]+?)\s*$/)?.[1] ?? t
   if (slug === 'lever') return t.split(' - ')[0].trim()
   return t
@@ -436,9 +438,12 @@ const FIELD_PATTERNS = [
   { re: /veteran/i,                                     value: () => PROFILE.veteranStatus },
 ]
 
+const FIELD_CONTAINER = 'fieldset, [class*="field-entry"], [class*="fieldEntry"], [class*="form-field"], [class*="question"]'
+
 function fieldDescriptor(el) {
   const label = el.labels?.[0]?.textContent
-    ?? (el.id ? document.querySelector(`label[for="${el.id}"]`)?.textContent : null)
+    ?? (el.id ? document.querySelector(`label[for="${el.id.replace(/["\\]/g, '\\$&')}"]`)?.textContent : null)
+    ?? el.closest(FIELD_CONTAINER)?.querySelector('label, legend')?.textContent
     ?? ''
   return [el.name, el.id, el.placeholder, el.getAttribute('aria-label'), el.getAttribute('data-automation-id'), label]
     .filter(Boolean)
@@ -561,14 +566,18 @@ async function autoFillForm(root = document) {
   })
 
   filled += await fillResumeUpload(root)
+  filled += await fillCoverLetterUpload(root, activeCfg ? getDrawerContext(activeCfg).companyName : '')
   return filled
 }
 
 // Loads the last-compiled master resume from the bridge server and injects it into
 // any empty PDF file input via DataTransfer (the only way to set input.files in JS).
+// Skips cover-letter slots (they get the cover letter) and "autofill from resume"
+// parsers such as Ashby's, which would re-parse the file and overwrite fields.
 async function fillResumeUpload(root = document) {
   const fileInputs = findAll('input[type="file"]', root)
     .filter(el => !el.files?.length && (!el.accept || el.accept.toLowerCase().includes('pdf')))
+    .filter(el => !/cover.?letter/i.test(fieldDescriptor(el)) && !el.closest('[class*="autofill"]'))
   if (!fileInputs.length) return 0
 
   const blob = await loadStoredPdf('resume')
@@ -589,10 +598,22 @@ async function fillResumeUpload(root = document) {
   return filled
 }
 
+// Most ATS pages wrap the application in <form>; Ashby uses a plain div, so fall
+// back to the smallest ancestor of the email field that holds a submit button.
+function findApplicationRoot() {
+  const form = findFirst('form')
+  if (form && findAll('input, select, textarea', form).length) return form
+  const email = findFirst('input[type="email"], input[name*="email" i]')
+  for (let n = email?.parentElement; n && n !== document.body; n = n.parentElement) {
+    if (findAll('button, input[type="submit"]', n).some(b => SUBMIT_BTN_RE.test(b.textContent || b.value || ''))) return n
+  }
+  return null
+}
+
 function injectAutoFillButton() {
   if (document.getElementById('hemline-autofill-btn')) return
 
-  const form = findFirst('form')
+  const form = findApplicationRoot()
   if (!form) return
 
   const btn = makePillButton('Auto-Fill', 'Fill profile details and attach your resume to this application form')
@@ -1126,24 +1147,35 @@ function reportApplyProgress(jobId, status) {
 async function waitForForm(timeout = 15_000) {
   const start = Date.now()
   while (Date.now() - start < timeout) {
-    const form = findFirst('form')
-    if (form && findAll('input, select, textarea', form).length) return form
+    const form = findApplicationRoot()
+    if (form) return form
     await sleep(500)
   }
-  return findFirst('form')
+  return findApplicationRoot()
 }
 
 function hasCoverLetterField(root = document) {
   return findAll('input[type="file"], textarea', root).some(el => /cover.?letter/i.test(fieldDescriptor(el)))
 }
 
-async function fillCoverLetterUpload(root = document) {
+// The stored letter is the last one generated. It names a company, so attach it only
+// when it was written for this company (or, if a company is unknown, very recently).
+async function coverLetterFits(company) {
+  const { coverLetterMeta: meta } = await chrome.storage.local.get('coverLetterMeta')
+  if (!meta) return false
+  const norm = s => (s ?? '').trim().toLowerCase()
+  if (norm(company) && norm(meta.company)) return norm(company) === norm(meta.company)
+  return Date.now() - meta.at < 2 * 60 * 60 * 1000
+}
+
+async function fillCoverLetterUpload(root = document, company = '') {
   const inputs = findAll('input[type="file"]', root)
     .filter(el => !el.files?.length && /cover.?letter/i.test(fieldDescriptor(el)))
-  if (!inputs.length) return 0
+  if (!inputs.length || !(await coverLetterFits(company))) return 0
   const blob = await loadStoredPdf('coverLetter')
   if (!blob) return 0
-  const file = new File([blob], 'cover_letter.pdf', { type: 'application/pdf' })
+  const name = PROFILE.firstName ? `${sanitizeForFilename(`${PROFILE.firstName} ${PROFILE.lastName}`)}_Cover_Letter.pdf` : 'Cover_Letter.pdf'
+  const file = new File([blob], name, { type: 'application/pdf' })
   let filled = 0
   for (const el of inputs) {
     try {
@@ -1185,7 +1217,6 @@ async function runApplyFlow(job, policy) {
   if (hasCoverLetterField() && jd) {
     reportApplyProgress(job.id, 'cover letter')
     try { await callEndpoint('COVER_LETTER', { jd, companyName: job.company, jobTitle: job.title }, { download: false }) } catch { /* skip CL on failure */ }
-    await fillCoverLetterUpload()
   }
 
   reportApplyProgress(job.id, 'filling')
