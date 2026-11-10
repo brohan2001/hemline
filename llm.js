@@ -45,12 +45,12 @@ export const HOST_PERMISSIONS = [
 // Haiku has no server-side refusal fallback; Opus/Sonnet route by refusal category.
 const SUPPORTS_FALLBACKS = new Set(['claude-opus-5-5', 'claude-sonnet-5-5'])
 
-async function callAnthropic({ key, model }, prompt, { createClient }) {
+async function callAnthropic({ key, model }, prompt, { createClient, fast }) {
   const client = createClient({ apiKey: key, dangerouslyAllowBrowser: true, maxRetries: 1 })
   const params = {
     model,
     max_tokens: 16000,
-    output_config: { effort: 'medium' },
+    output_config: { effort: fast ? 'low' : 'medium' },
     messages: [{ role: 'user', content: prompt }],
   }
   if (SUPPORTS_FALLBACKS.has(model)) {
@@ -68,7 +68,7 @@ async function callAnthropic({ key, model }, prompt, { createClient }) {
   return text
 }
 
-async function callOpenAiCompatible({ provider, key, model }, prompt, { fetchImpl }) {
+async function callOpenAiCompatible({ provider, key, model }, prompt, { fetchImpl, fast }) {
   const res = await fetchImpl(PROVIDERS[provider].url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
@@ -77,6 +77,9 @@ async function callOpenAiCompatible({ provider, key, model }, prompt, { fetchImp
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.3,
       max_tokens: 16384,
+      // Fast mode: these models otherwise "think" for 30-90 s on a tailoring prompt.
+      // 'low' is the one value every listed model accepts (gpt-oss rejects 'none').
+      ...(fast ? { reasoning_effort: 'low' } : {}),
     }),
   })
   if (!res.ok) {
@@ -103,6 +106,7 @@ export async function callOne(entry, prompt, deps = {}) {
   const resolved = {
     createClient: deps.createClient ?? (opts => new Anthropic(opts)),
     fetchImpl: deps.fetchImpl ?? ((...a) => fetch(...a)),
+    fast: deps.fast ?? true,
   }
   const p = PROVIDERS[entry.provider]
   if (!p) throw new Error(`Unknown provider: ${entry.provider}`)

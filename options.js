@@ -1,6 +1,6 @@
 import { PROVIDERS } from './llm.js'
 import { callBackground, base64ToBlobUrl } from './bridge.js'
-import { PROFILE_FIELDS, SETTINGS_KEYS, buildSettingsBackup, parseSettingsBackup } from './store.js'
+import { PROFILE_FIELDS, SETTINGS_KEYS, buildSettingsBackup, parseSettingsBackup, isFastMode } from './store.js'
 
 const FIELDS = PROFILE_FIELDS
 const SKILL_POOL_NAME = 'skills_pool.txt'
@@ -111,6 +111,8 @@ function renderKeyLinks() {
     if (i < Object.keys(PROVIDERS).length - 1) span.append(' · ')
   })
 }
+
+$('fast-mode').addEventListener('change', (e) => chrome.storage.local.set({ fastMode: e.target.checked }))
 
 $('add-key').addEventListener('click', () => {
   const provider = keys.length === 0 ? 'gemini' : 'anthropic'
@@ -271,11 +273,12 @@ $('import-file').addEventListener('change', async (e) => {
 // ─── Boot ────────────────────────────────────────────────────────────────────
 
 async function init() {
-  const s = await chrome.storage.local.get(['llmKeys', 'profile', 'resumeTex', 'projectPool', 'skillPools', 'backend', 'ledger'])
+  const s = await chrome.storage.local.get(['llmKeys', 'profile', 'resumeTex', 'projectPool', 'skillPools', 'backend', 'ledger', 'fastMode'])
   keys = s.llmKeys ?? []
   if (keys.length === 0) keys.push({ provider: 'gemini', key: '', model: PROVIDERS.gemini.models[0] })
   renderKeys()
   renderKeyLinks()
+  $('fast-mode').checked = isFastMode(s)
 
   FIELDS.forEach(f => { if ($(f)) $(f).value = s.profile?.[f] ?? '' })
   if (s.resumeTex) {

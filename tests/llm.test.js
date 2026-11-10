@@ -85,12 +85,38 @@ describe('model selection', () => {
   })
 })
 
+describe('fast mode', () => {
+  const bodyOf = f => JSON.parse(f.mock.calls[0][1].body)
+
+  it('asks OpenAI-compatible models for low reasoning by default', async () => {
+    const fetchImpl = okFetch('hi')
+    await callOne({ provider: 'gemini', key: 'g' }, 'p', { fetchImpl })
+    expect(bodyOf(fetchImpl).reasoning_effort).toBe('low')
+  })
+
+  it('leaves reasoning at the provider default when turned off', async () => {
+    const fetchImpl = okFetch('hi')
+    await callLlm('p', [{ provider: 'groq', key: 'q' }], { fetchImpl, fast: false })
+    expect(bodyOf(fetchImpl)).not.toHaveProperty('reasoning_effort')
+  })
+
+  it('uses low effort for Claude in fast mode and medium otherwise', async () => {
+    const done = { stop_reason: 'end_turn', content: [{ type: 'text', text: 'ok' }] }
+    const fast = fakeAnthropic(done)
+    await callOne({ provider: 'anthropic', key: 'sk' }, 'p', { createClient: fast.createClient })
+    expect(fast.stream.mock.calls[0][0].output_config).toEqual({ effort: 'low' })
+    const slow = fakeAnthropic(done)
+    await callOne({ provider: 'anthropic', key: 'sk' }, 'p', { createClient: slow.createClient, fast: false })
+    expect(slow.stream.mock.calls[0][0].output_config).toEqual({ effort: 'medium' })
+  })
+})
+
 describe('Anthropic provider', () => {
   const done = { stop_reason: 'end_turn', content: [{ type: 'thinking', thinking: '' }, { type: 'text', text: 'resume' }] }
 
   it('uses the SDK in browser mode with refusal fallbacks on Opus', async () => {
     const { stream, createClient } = fakeAnthropic(done)
-    expect(await callOne({ provider: 'anthropic', key: 'sk' }, 'p', { createClient })).toBe('resume')
+    expect(await callOne({ provider: 'anthropic', key: 'sk' }, 'p', { createClient, fast: false })).toBe('resume')
     expect(createClient).toHaveBeenCalledWith(expect.objectContaining({ apiKey: 'sk', dangerouslyAllowBrowser: true }))
     expect(stream.mock.calls[0][0]).toMatchObject({
       model: 'claude-opus-5-5',

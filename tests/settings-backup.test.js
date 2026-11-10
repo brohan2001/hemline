@@ -28,6 +28,12 @@ describe('parseSettingsBackup', () => {
       .toEqual({ firstName: 'Alex', zip: '80202' })
   })
 
+  it('round-trips the fast mode switch', () => {
+    expect(buildSettingsBackup({ fastMode: false }).fastMode).toBe(false)
+    expect(parse({ fastMode: false }).fastMode).toBe(false)
+    expect(() => parse({ fastMode: 'yes' })).toThrow(/true or false/)
+  })
+
   it('accepts a skill pool as a plain string', () => {
     expect(parse({ skillPools: 'Go, Rust' }).skillPools).toEqual({ 'skills_pool.txt': 'Go, Rust' })
   })

@@ -5,7 +5,7 @@ import { fillTemplate, fullName } from './pipeline/templates.js'
 import { callLlm, callOne } from './llm.js'
 import { compileTex } from './tex-engine.js'
 import {
-  getSettings, appendLedger, checkDuplicate, readLedger, savePdf, loadPdf, bytesToBase64, base64ToBytes,
+  getSettings, isFastMode, appendLedger, checkDuplicate, readLedger, savePdf, loadPdf, bytesToBase64, base64ToBytes,
 } from './store.js'
 
 // Background hub for the standalone extension. Content scripts and extension pages
@@ -88,7 +88,7 @@ async function userContext() {
     profile,
     candidate: { name, highlights: profile.highlights ?? '' },
     filePrefix: name ? sanitizeFilename(name) : 'Resume',
-    callLlm: (prompt) => callLlm(prompt, s.llmKeys),
+    callLlm: (prompt) => callLlm(prompt, s.llmKeys, { fast: isFastMode(s) }),
   }
 }
 
@@ -192,7 +192,7 @@ async function coldText(op, p) {
 async function importResume({ text }) {
   const s = await getSettings()
   const template = fillTemplate((await loadDefaultTemplates()).resume, s.profile ?? {})
-  const raw = await callLlm(buildResumeImportPrompt(text, template), s.llmKeys)
+  const raw = await callLlm(buildResumeImportPrompt(text, template), s.llmKeys, { fast: isFastMode(s) })
   const tex = extractLatex(raw)
   if (!tex) throw new Error('The model did not return a LaTeX document. Try again or use another key.')
   return { tex, ...(await preview({ tex })) }

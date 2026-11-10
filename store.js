@@ -2,7 +2,10 @@
 // sources, ledger) lives in chrome.storage.local; generated PDFs live in IndexedDB
 // because they are binary and can exceed storage.local's per-item comfort zone.
 
-export const SETTINGS_KEYS = ['llmKeys', 'profile', 'resumeTex', 'projectPool', 'skillPools', 'clTemplate', 'backend']
+export const SETTINGS_KEYS = ['llmKeys', 'profile', 'resumeTex', 'projectPool', 'skillPools', 'clTemplate', 'backend', 'fastMode']
+
+// Fast mode (low model reasoning) is on unless the user turned it off.
+export const isFastMode = s => s?.fastMode !== false
 
 export const PROFILE_FIELDS = [
   'firstName', 'lastName', 'email', 'phone', 'linkedin', 'github', 'website', 'skills', 'highlights',
@@ -23,6 +26,7 @@ export function buildSettingsBackup(s) {
   if (s.profile && Object.keys(s.profile).length) backup.profile = s.profile
   for (const k of ['resumeTex', 'projectPool']) if (s[k]?.trim()) backup[k] = s[k]
   if (s.skillPools && Object.keys(s.skillPools).length) backup.skillPools = s.skillPools
+  if (typeof s.fastMode === 'boolean') backup.fastMode = s.fastMode
   return backup
 }
 
@@ -50,6 +54,10 @@ export function parseSettingsBackup(text, providers) {
     const pools = typeof data.skillPools === 'string' ? { 'skills_pool.txt': data.skillPools } : data.skillPools
     if (!pools || typeof pools !== 'object' || Array.isArray(pools)) throw new Error('"skillPools" must be a string or an object.')
     out.skillPools = Object.fromEntries(Object.entries(pools).filter(([, v]) => typeof v === 'string' && v.trim()))
+  }
+  if (data.fastMode !== undefined) {
+    if (typeof data.fastMode !== 'boolean') throw new Error('"fastMode" must be true or false.')
+    out.fastMode = data.fastMode
   }
   if (data.llmKeys !== undefined) {
     if (!Array.isArray(data.llmKeys)) throw new Error('"llmKeys" must be an array.')
