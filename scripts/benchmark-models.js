@@ -548,7 +548,7 @@ function buildReport(allResults) {
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main() {
-  console.log('=== JSeek Model Benchmark v2 ===\n')
+  console.log('=== Hemline Model Benchmark v2 ===\n')
   await maybeSpawnRelay()
   console.log('Reading local files...')
 

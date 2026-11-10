@@ -6,7 +6,7 @@ const pending = new Map()
 
 function getPort() {
   if (port) return port
-  port = chrome.runtime.connect({ name: 'jseek' })
+  port = chrome.runtime.connect({ name: 'hemline' })
   port.onMessage.addListener((msg) => {
     const p = pending.get(msg.id)
     if (!p) return
@@ -18,7 +18,7 @@ function getPort() {
   })
   port.onDisconnect.addListener(() => {
     port = null
-    for (const p of pending.values()) p.reject(new Error('JSeek background restarted; please retry.'))
+    for (const p of pending.values()) p.reject(new Error('Hemline background restarted; please retry.'))
     pending.clear()
   })
   return port

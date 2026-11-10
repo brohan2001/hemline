@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>job-seek</title>
+<title>hemline</title>
 <style>
   :root {
     --bg: #0f1117; --surface: #181b26; --surface2: #1e2130; --border: #252836;
@@ -164,7 +164,7 @@
 <body>
 
 <div class="header">
-  <div class="brand">&lt;job-seek&gt;<span class="live-dot"></span></div>
+  <div class="brand">&lt;hemline&gt;<span class="live-dot"></span></div>
   <span class="header-meta" id="last-refreshed">Loading…</span>
   <div class="spacer"></div>
   <span class="health" id="health-line"></span>
@@ -486,7 +486,7 @@
     try {
       const resp = await post(endpoint, { [key]: jd, companyName, jobTitle })
       downloadBlob(await resp.blob(), `${prefix}_${safeName(companyName)}.pdf`)
-      const e = stopTimer(t0); const score = resp.headers.get('X-JSeek-Match-Score')
+      const e = stopTimer(t0); const score = resp.headers.get('X-Hemline-Match-Score')
       setStatus(`Done in ${e}s — downloaded.${score!==null?` ${score}% match`:''}`); loadApplications()
     } catch (err) { stopTimer(t0); setStatus(err.message, true) } finally { setBusy(false) }
   }

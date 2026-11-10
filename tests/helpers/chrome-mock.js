@@ -1,5 +1,5 @@
 // chrome.* stub for booting content_script.js in JSDOM. runtime.connect returns a
-// fake 'jseek' port that answers background ops from `responses` (defaults make
+// fake 'hemline' port that answers background ops from `responses` (defaults make
 // the extension look fully configured so buttons stay enabled).
 export function chromeMock(storageData = {}, responses = {}) {
   const answers = {

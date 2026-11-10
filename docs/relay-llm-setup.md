@@ -17,7 +17,7 @@ pip install -r requirements.txt
 
 ## Configure API keys
 
-Create a `.env` file inside the RelayFreeLLM directory (not the JSeek project):
+Create a `.env` file inside the RelayFreeLLM directory (not the Hemline project):
 
 ```
 GOOGLE_API_KEY=your-google-ai-studio-key
@@ -29,7 +29,7 @@ Gemini keys are free via [Google AI Studio](https://aistudio.google.com). At lea
 
 ## Manual launch (optional)
 
-The JSeek server auto-spawns the relay on startup. To run it manually:
+The Hemline server auto-spawns the relay on startup. To run it manually:
 
 ```bash
 cd ~/Documents/RelayFreeLLM
@@ -38,7 +38,7 @@ python3 -m src.server
 
 The relay listens on `http://localhost:8000` by default.
 
-## JSeek .env configuration
+## Hemline .env configuration
 
 ```
 LLM_PROVIDER=relay

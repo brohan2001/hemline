@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "JSeek Enhancer",
+  "name": "Hemline",
   "version": "2.0.0",
   "description": "Tailors your LaTeX resume and cover letter to any job posting with your own Claude or free Gemini/Groq key, plus H-1B filtering and ATS auto-fill.",
   "permissions": [
@@ -113,7 +113,7 @@
   },
   "browser_specific_settings": {
     "gecko": {
-      "id": "jseek-enhancer@jseek.extension",
+      "id": "hemline@hemline.extension",
       "strict_min_version": "128.0",
       "data_collection_permissions": {
         "required": [
@@ -130,7 +130,7 @@
     "128": "icons/icon128.png"
   },
   "action": {
-    "default_title": "JSeek Enhancer",
+    "default_title": "Hemline",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",

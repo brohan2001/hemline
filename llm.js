@@ -112,7 +112,7 @@ export async function callOne(entry, prompt, deps = {}) {
 
 export async function callLlm(prompt, keys, deps = {}) {
   const usable = (keys ?? []).filter(k => k?.key?.trim())
-  if (usable.length === 0) throw new Error('No API key configured. Open the JSeek options page and add a Claude or free Gemini key.')
+  if (usable.length === 0) throw new Error('No API key configured. Open the Hemline options page and add a Claude or free Gemini key.')
   const failures = []
   for (const entry of usable) {
     try {

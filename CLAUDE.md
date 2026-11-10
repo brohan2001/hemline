@@ -1,4 +1,4 @@
-# JSeek Enhancer
+# Hemline
 
 ## Standalone extension (the public product)
 
@@ -10,7 +10,7 @@ npm run build:chrome   # then load dist/chrome unpacked
 npm run test:e2e       # builds and drives the real extension in headless Chromium (LLM mocked)
 ```
 
-- `background.js` handles ops sent over a `jseek` port (`TAILOR`, `COVER_LETTER`, `COLD_MESSAGE`, `COLD_EMAIL`, `CHECK_DUPLICATE`, `GET_PDF`, `IMPORT_RESUME`, `PREVIEW_TEX`, `TEST_KEY`, `STATUS`, …). Callers send keep-alive pings so the MV3 service worker survives 20-40 s LLM calls.
+- `background.js` handles ops sent over a `hemline` port (`TAILOR`, `COVER_LETTER`, `COLD_MESSAGE`, `COLD_EMAIL`, `CHECK_DUPLICATE`, `GET_PDF`, `IMPORT_RESUME`, `PREVIEW_TEX`, `TEST_KEY`, `STATUS`, …). Callers send keep-alive pings so the MV3 service worker survives 20-40 s LLM calls.
 - `pipeline/` is environment-agnostic and shared by the extension and `server.js`: callers inject `callLlm(prompt) → string` and `compile(tex) → { pdf, log }`. Never import `fs`/`child_process` there.
 - Chrome compiles in `offscreen.html` (service workers can't start Workers); Firefox's event-page background starts the Worker directly.
 - `llm.js`: Anthropic via the vendored official SDK (`vendor/anthropic-sdk.js`, rebuild with `npm run vendor:sdk`), Gemini/Groq/Cerebras via OpenAI-compatible fetch. Keys cascade in user order.
@@ -62,7 +62,7 @@ Every relay call writes a JSON line to `logs/pipeline.log` (created automaticall
 
 ## Server endpoints
 
-- `POST /tailor`, `POST /cover-letter` — PDF generation (serialized by a pipeline mutex; tailor returns `X-JSeek-Match-Score`)
+- `POST /tailor`, `POST /cover-letter` — PDF generation (serialized by a pipeline mutex; tailor returns `X-Hemline-Match-Score`)
 - `POST /cold-message`, `POST /cold-email` — text generation
 - `GET /` — local web dashboard (`public/index.html`)
 - `GET /health` — status, provider, RelayFreeLLM port check, pdflatex presence

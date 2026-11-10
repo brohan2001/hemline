@@ -129,7 +129,7 @@ describe('POST /tailor', () => {
       .send({ jobDescription: 'ML engineer role requiring Python and TensorFlow', companyName: 'Acme', jobTitle: 'SWE' })
     expect(res.status).toBe(200)
     expect(res.headers['content-type']).toMatch(/application\/pdf/)
-    expect(res.headers['x-jseek-match-score']).toMatch(/^\d+$/)
+    expect(res.headers['x-hemline-match-score']).toMatch(/^\d+$/)
   })
 
   it('never writes to the master swe.tex (compiles in resumes/build)', async () => {

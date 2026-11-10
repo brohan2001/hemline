@@ -17,7 +17,7 @@ async function launchWithExtension() {
 }
 
 describe('live UI injection', () => {
-  it('injects #jseek-btn-row on a Greenhouse job posting', async () => {
+  it('injects #hemline-btn-row on a Greenhouse job posting', async () => {
     const ctx = await launchWithExtension()
     const page = await ctx.newPage()
     try {
@@ -27,14 +27,14 @@ describe('live UI injection', () => {
       const href = await page.locator('a[href*="/jobs/"]').first().getAttribute('href')
       expect(href).toBeTruthy()
       await page.goto(new URL(href, page.url()).href, { waitUntil: 'domcontentloaded', timeout: 30_000 })
-      await page.waitForSelector('#jseek-btn-row', { timeout: 20_000 })
-      expect(await page.$('#jseek-btn-row')).not.toBeNull()
+      await page.waitForSelector('#hemline-btn-row', { timeout: 20_000 })
+      expect(await page.$('#hemline-btn-row')).not.toBeNull()
     } finally {
       await ctx.close()
     }
   }, 120_000)
 
-  it('injects #jseek-btn-row on a Lever job posting', async () => {
+  it('injects #hemline-btn-row on a Lever job posting', async () => {
     const ctx = await launchWithExtension()
     const page = await ctx.newPage()
     try {
@@ -42,8 +42,8 @@ describe('live UI injection', () => {
       const href = await page.locator('a.posting-title, .posting-title a, a[href*="jobs.lever.co/palantir/"]').first().getAttribute('href')
       expect(href).toBeTruthy()
       await page.goto(new URL(href, page.url()).href, { waitUntil: 'domcontentloaded', timeout: 30_000 })
-      await page.waitForSelector('#jseek-btn-row', { timeout: 20_000 })
-      expect(await page.$('#jseek-btn-row')).not.toBeNull()
+      await page.waitForSelector('#hemline-btn-row', { timeout: 20_000 })
+      expect(await page.$('#hemline-btn-row')).not.toBeNull()
     } finally {
       await ctx.close()
     }
@@ -57,7 +57,7 @@ describe('live UI injection', () => {
     try {
       await page.goto('https://www.linkedin.com/jobs/search/?keywords=software%20engineer', { waitUntil: 'domcontentloaded', timeout: 30_000 })
       await page.waitForTimeout(5000)
-      console.log('[LinkedIn] #jseek-btn-row present:', (await page.$('#jseek-btn-row')) !== null)
+      console.log('[LinkedIn] #hemline-btn-row present:', (await page.$('#hemline-btn-row')) !== null)
     } catch (err) {
       console.warn('[LinkedIn] skipped:', err.message)
     } finally {
@@ -71,7 +71,7 @@ describe('live UI injection', () => {
     try {
       await page.goto('https://www.indeed.com/jobs?q=software+engineer', { waitUntil: 'domcontentloaded', timeout: 30_000 })
       await page.waitForTimeout(5000)
-      console.log('[Indeed] #jseek-btn-row present:', (await page.$('#jseek-btn-row')) !== null)
+      console.log('[Indeed] #hemline-btn-row present:', (await page.$('#hemline-btn-row')) !== null)
     } catch (err) {
       console.warn('[Indeed] skipped:', err.message)
     } finally {

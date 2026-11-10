@@ -96,7 +96,7 @@ single source of truth for Phase 3 progress. Do not mark a task done until its a
 
 - [x] Step 1: Job Stream Dashboard — `GET /api/jobs` aggregating Arbeitnow + Remotive + Jobicy (Promise.allSettled, URL dedup); `public/index.html` refactored to a 2-column layout where clicking a job card in the left stream populates the right tailoring panel
 - [x] Step 2: Production auto-filler — `setFieldValue` uses the native prototype value setter to bypass React's fiber shim, dispatches `InputEvent` with `composed: true` for Workday shadow-DOM forms
-- [x] Step 3: Live Playwright E2E suite — `tests/ui_live.test.js` loads the unpacked extension into real Chromium and asserts `#jseek-btn-row` injection on live Greenhouse and Lever job pages; LinkedIn/Indeed best-effort (bot protection); `test:ui-live` script; live suites gated behind `JSEEK_LIVE=1`
+- [x] Step 3: Live Playwright E2E suite — `tests/ui_live.test.js` loads the unpacked extension into real Chromium and asserts `#hemline-btn-row` injection on live Greenhouse and Lever job pages; LinkedIn/Indeed best-effort (bot protection); `test:ui-live` script; live suites gated behind `HEMLINE_LIVE=1`
 - [x] Step 4: Universal semantic scraper — `detectSite()` falls back to `SITE_CONFIGS.universal`; heuristic scorer ranks content blocks by text density × JD-keyword hits × log(length); `*://*/*` added to both manifests
 - [x] Step 5: Git hardening — `tests/mocks/` and `*.tex.bak` gitignored (existing mocks stay tracked — the unit tests need them); clean commit pushed to origin/main
 

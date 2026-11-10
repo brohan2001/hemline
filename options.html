@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>JSeek Enhancer Settings</title>
+<title>Hemline Settings</title>
 <link rel="stylesheet" href="options.css">
 </head>
 <body>
 <main>
   <header>
-    <h1>JSeek Enhancer</h1>
+    <h1>Hemline</h1>
     <p class="sub">Everything stays in your browser. Your resume and the job description are sent only to the AI provider whose key you add below.</p>
     <ol id="checklist" class="checklist">
       <li data-step="key">Add an AI key</li>
@@ -20,7 +20,7 @@
 
   <section id="keys-section">
     <h2>1. AI keys</h2>
-    <p class="sub">Keys are tried top to bottom; if one fails or runs out of quota, JSeek moves to the next.
+    <p class="sub">Keys are tried top to bottom; if one fails or runs out of quota, Hemline moves to the next.
       <strong>Claude</strong> needs a paid Anthropic API key (a Claude.ai subscription does not work here).
       <strong>Gemini</strong>, <strong>Groq</strong> and <strong>Cerebras</strong> have free tiers.</p>
     <div id="key-list"></div>
@@ -32,7 +32,7 @@
 
   <section id="resume-section">
     <h2>2. Your resume</h2>
-    <p class="sub">Paste your resume as plain text and JSeek converts it once into its LaTeX template. Already have a LaTeX resume in Jake's template? Paste or upload it directly.</p>
+    <p class="sub">Paste your resume as plain text and Hemline converts it once into its LaTeX template. Already have a LaTeX resume in Jake's template? Paste or upload it directly.</p>
     <div class="tabs">
       <button class="tab active" data-tab="paste">Paste text</button>
       <button class="tab" data-tab="tex">LaTeX source</button>
@@ -57,9 +57,9 @@
 
     <details>
       <summary>Project pool and skill pool (optional, improves tailoring)</summary>
-      <p class="sub">Project pool: extra <code>\resumeProjectHeading</code> blocks. JSeek picks the 3 that best fit each job.</p>
+      <p class="sub">Project pool: extra <code>\resumeProjectHeading</code> blocks. Hemline picks the 3 that best fit each job.</p>
       <textarea id="project-pool" rows="8" spellcheck="false" class="mono"></textarea>
-      <p class="sub">Skill pool: every skill you would be willing to list, comma-separated. JSeek pulls the ones each job asks for.</p>
+      <p class="sub">Skill pool: every skill you would be willing to list, comma-separated. Hemline pulls the ones each job asks for.</p>
       <textarea id="skill-pool" rows="4"></textarea>
       <div class="actions">
         <button id="load-sample-pool" class="secondary">Insert sample project</button>
@@ -229,11 +229,11 @@
 
   <section id="advanced-section">
     <h2>Advanced</h2>
-    <label class="check"><input type="checkbox" id="universal"> Show JSeek buttons on every careers page, not just the supported job boards (asks for access to all sites)</label>
+    <label class="check"><input type="checkbox" id="universal"> Show Hemline buttons on every careers page, not just the supported job boards (asks for access to all sites)</label>
     <label for="backend">Processing</label>
     <select id="backend">
       <option value="extension">In the extension, using my keys above (default)</option>
-      <option value="local">My local JSeek server at localhost:4567 (developers)</option>
+      <option value="local">My local Hemline server at localhost:4567 (developers)</option>
     </select>
     <div class="actions">
       <button id="export-ledger" class="secondary">Export application history (JSON)</button>

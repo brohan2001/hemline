@@ -1,9 +1,9 @@
-# Publishing JSeek
+# Publishing Hemline
 
-JSeek ships as two public pieces:
+Hemline ships as two public pieces:
 
 1. **The browser extension** on the Chrome Web Store and Firefox Add-ons (AMO). It is fully standalone: users bring their own AI key, LaTeX compiles to PDF inside the browser (WASM pdfTeX), and everything is stored locally.
-2. **The job feed and website** on GitHub Pages: `https://brohan2001.github.io/resume-extension/` hosts `jobs.json` (rebuilt about every 30 minutes by `.github/workflows/feed.yml`), the landing page, and the privacy policy the stores require.
+2. **The job feed and website** on GitHub Pages: `https://brohan2001.github.io/hemline/` hosts `jobs.json` (rebuilt about every 30 minutes by `.github/workflows/feed.yml`), the landing page, and the privacy policy the stores require.
 
 The links to share are the store listing (where people install it) and the Pages URL (landing page and privacy policy).
 
@@ -16,18 +16,18 @@ The links to share are the store listing (where people install it) and the Pages
 1. Commit and push `data/`, `site/`, `jobstream.js`, `pipeline/jobfilter.js`, `scripts/build-feed.mjs`, and `.github/workflows/feed.yml` to `main`.
 2. In the repo, open **Settings → Pages → Build and deployment → Source: GitHub Actions**.
 3. Open **Actions → Job feed → Run workflow**. One run takes about 2 minutes (~3,000 jobs).
-4. Check that `https://brohan2001.github.io/resume-extension/jobs.json` loads. The extension's `FEED_URL` (in `dashboard.js`) points there.
+4. Check that `https://brohan2001.github.io/hemline/jobs.json` loads. The extension's `FEED_URL` (in `dashboard.js`) points there.
 
 GitHub pauses scheduled workflows after 60 days with no repository activity. Re-enable the workflow from the Actions tab if the feed goes stale.
 
 ### Chrome Web Store
 
 1. Register at the [Chrome Web Store developer dashboard](https://chrome.google.com/webstore/devconsole) (one-time $5 fee).
-2. Run `npm run build` to create `dist/jseek-chrome.zip`.
+2. Run `npm run build` to create `dist/hemline-chrome.zip`.
 3. Create a new item and upload the zip. Use **Unlisted** visibility for the first release.
 4. Fill in the listing:
    - Screenshots from `store-assets/` (1280×800). Add one real screenshot of the buttons on a LinkedIn or Greenhouse posting.
-   - Privacy policy URL: `https://brohan2001.github.io/resume-extension/privacy.html`.
+   - Privacy policy URL: `https://brohan2001.github.io/hemline/privacy.html`.
    - Single purpose: "Tailor the user's resume and cover letter to the job posting they are viewing and help them apply."
 5. Permission justifications (the review asks for each one):
 
@@ -49,9 +49,9 @@ GitHub pauses scheduled workflows after 60 days with no repository activity. Re-
 ### Firefox Add-ons (AMO)
 
 1. Create an account at [addons.mozilla.org/developers](https://addons.mozilla.org/developers/) (free).
-2. Run `npm run build` to create `dist/jseek-firefox.zip`. `npx web-ext lint --source-dir dist/firefox` should show 0 errors.
+2. Run `npm run build` to create `dist/hemline-firefox.zip`. `npx web-ext lint --source-dir dist/firefox` should show 0 errors.
 3. Upload as a listed add-on. AMO requires source code for minified files, so link the GitHub repo and note that `vendor/anthropic-sdk.js` is built with `npm run vendor:sdk` from `@anthropic-ai/sdk`, and `vendor/swiftlatex/` comes from SwiftLaTeX release v20022022 with one documented patch.
-4. The gecko id is `jseek-enhancer@jseek.extension` (in `manifest_firefox.json`).
+4. The gecko id is `hemline@hemline.extension` (in `manifest_firefox.json`).
 
 ## Every release
 
@@ -61,7 +61,7 @@ GitHub pauses scheduled workflows after 60 days with no repository activity. Re-
 
 ## Licensing note
 
-The bundled LaTeX engine (`vendor/swiftlatex/`) is AGPL-3.0, and pdfTeX is GPL. Distributing the extension means distributing those components, so JSeek is licensed AGPL-3.0 (`LICENSE`) and its source must stay public. Jake Gutierrez's resume template, which `templates/` is based on, is MIT.
+The bundled LaTeX engine (`vendor/swiftlatex/`) is AGPL-3.0, and pdfTeX is GPL. Distributing the extension means distributing those components, so Hemline is licensed AGPL-3.0 (`LICENSE`) and its source must stay public. Jake Gutierrez's resume template, which `templates/` is based on, is MIT.
 
 ## Rebuilding the bundled TeX files
 

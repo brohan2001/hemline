@@ -21,7 +21,7 @@ describe('parsePageCount', () => {
   })
 
   it('reads a report hard-wrapped at 79 columns by pdflatex', () => {
-    const wrapped = 'Output written on /Users/someone/Documents/jseek-extension/resumes/build/swe.pdf (1\n page, 107062 bytes).'
+    const wrapped = 'Output written on /Users/someone/Documents/hemline/resumes/build/swe.pdf (1\n page, 107062 bytes).'
     expect(parsePageCount(wrapped)).toBe(1)
   })
 

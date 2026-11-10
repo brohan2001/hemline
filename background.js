@@ -9,7 +9,7 @@ import {
 } from './store.js'
 
 // Background hub for the standalone extension. Content scripts and extension pages
-// talk to it over a 'jseek' port (see handleOp). Everything runs locally: the LLM
+// talk to it over a 'hemline' port (see handleOp). Everything runs locally: the LLM
 // call goes straight from here to the user's own provider, and LaTeX compiles in a
 // WASM pdfTeX worker. backend === 'local' forwards to the optional dev server.
 
@@ -80,7 +80,7 @@ async function userContext() {
   const s = await getSettings()
   const profile = s.profile ?? {}
   if (!s.resumeTex?.trim()) {
-    throw new Error('No resume set up yet. Open the JSeek options page and import your resume first.')
+    throw new Error('No resume set up yet. Open the Hemline options page and import your resume first.')
   }
   const name = fullName(profile)
   return {
@@ -114,7 +114,7 @@ async function viaServer(op, p) {
   switch (op) {
     case 'TAILOR': {
       const resp = await serverPost('/tailor', { jobDescription: p.jobDescription, companyName: p.companyName, jobTitle: p.jobTitle, provider: p.provider })
-      return { bytes: new Uint8Array(await resp.arrayBuffer()), matchScore: Number(resp.headers.get('X-JSeek-Match-Score')) || null, filename: `Resume_${safe}.pdf` }
+      return { bytes: new Uint8Array(await resp.arrayBuffer()), matchScore: Number(resp.headers.get('X-Hemline-Match-Score')) || null, filename: `Resume_${safe}.pdf` }
     }
     case 'COVER_LETTER': {
       const resp = await serverPost('/cover-letter', { jd: p.jd, companyName: p.companyName, jobTitle: p.jobTitle, provider: p.provider })
@@ -236,13 +236,13 @@ async function handleOp(op, p = {}) {
     case 'TEST_KEY': return callOne(p.entry, 'Reply with the single word OK.')
     case 'DEFAULT_TEMPLATES': return loadDefaultTemplates()
   }
-  throw new Error(`Unknown JSeek operation: ${op}`)
+  throw new Error(`Unknown Hemline operation: ${op}`)
 }
 
 // Ports (not one-shot messages) carry requests so the caller's keep-alive pings
 // stop Chrome from suspending the service worker during 20-40 s LLM calls.
 chrome.runtime.onConnect.addListener((port) => {
-  if (port.name !== 'jseek') return
+  if (port.name !== 'hemline') return
   port.onMessage.addListener(async (msg) => {
     if (!msg?.op) return
     try {
@@ -309,7 +309,7 @@ async function sendRunApply(tabId, job, policy, attempts = 8) {
 
 async function logResult(job) {
   await appendLedger({ company: job.company, title: job.title, status: job.status, applyUrl: job.applyUrl })
-    .catch(err => console.warn('[JSeek] ledger write failed:', err.message))
+    .catch(err => console.warn('[Hemline] ledger write failed:', err.message))
 }
 
 async function processQueue() {
@@ -388,7 +388,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // Mapped job boards get the content script from the manifest. Running on every
 // other careers page needs the broad '*://*/*' grant, which the user opts into
 // from the options page; we register the script only once it's granted.
-const UNIVERSAL_ID = 'jseek-universal'
+const UNIVERSAL_ID = 'hemline-universal'
 
 async function syncUniversalScript() {
   const granted = await chrome.permissions.contains({ origins: ['*://*/*'] })
@@ -406,8 +406,8 @@ async function syncUniversalScript() {
   }
 }
 
-chrome.permissions.onAdded.addListener(() => syncUniversalScript().catch(err => console.warn('[JSeek]', err.message)))
-chrome.permissions.onRemoved.addListener(() => syncUniversalScript().catch(err => console.warn('[JSeek]', err.message)))
+chrome.permissions.onAdded.addListener(() => syncUniversalScript().catch(err => console.warn('[Hemline]', err.message)))
+chrome.permissions.onRemoved.addListener(() => syncUniversalScript().catch(err => console.warn('[Hemline]', err.message)))
 chrome.runtime.onStartup.addListener(() => syncUniversalScript().catch(() => {}))
 chrome.runtime.onInstalled.addListener(() => syncUniversalScript().catch(() => {}))
 

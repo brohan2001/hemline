@@ -251,7 +251,7 @@ $('backend').addEventListener('change', async (e) => {
 $('export-ledger').addEventListener('click', async () => {
   const ledger = await callBackground('GET_LEDGER')
   const url = URL.createObjectURL(new Blob([JSON.stringify(ledger, null, 2)], { type: 'application/json' }))
-  const a = Object.assign(document.createElement('a'), { href: url, download: 'jseek-applications.json' })
+  const a = Object.assign(document.createElement('a'), { href: url, download: 'hemline-applications.json' })
   a.click()
   setTimeout(() => URL.revokeObjectURL(url), 10_000)
 })

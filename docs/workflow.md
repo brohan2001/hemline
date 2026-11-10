@@ -1,6 +1,6 @@
 # Daily Job Application Workflow
 
-A step-by-step guide to using every feature of the JSeek system. Follow this top-to-bottom each day.
+A step-by-step guide to using every feature of the Hemline system. Follow this top-to-bottom each day.
 
 ---
 
@@ -9,7 +9,7 @@ A step-by-step guide to using every feature of the JSeek system. Follow this top
 ### 1. Start the server (keep this terminal tab open all day)
 
 ```bash
-cd ~/Documents/jseek-extension
+cd ~/Documents/hemline
 npm start
 ```
 
@@ -19,7 +19,7 @@ Visit **http://localhost:4567** — you should see the dashboard. The health lin
 
 1. Go to `chrome://extensions`
 2. Turn on **Developer mode**
-3. Click **Load unpacked** → select `~/Documents/jseek-extension`
+3. Click **Load unpacked** → select `~/Documents/hemline`
 
 After any code update: hit the reload ↻ icon on the extension card.
 
@@ -68,13 +68,13 @@ Use the H1-B and seniority filters together to quickly cut your list to companie
 
 ### C. LinkedIn / other job boards
 
-Browse normally. The extension runs on LinkedIn, Indeed, Glassdoor, Jobright, BuiltIn, WellFound, Dice, ZipRecruiter, and *any* other careers page via the universal scraper. On any job posting you'll see the JSeek button row injected above the description.
+Browse normally. The extension runs on LinkedIn, Indeed, Glassdoor, Jobright, BuiltIn, WellFound, Dice, ZipRecruiter, and *any* other careers page via the universal scraper. On any job posting you'll see the Hemline button row injected above the description.
 
 ---
 
 ## Step 2 — Evaluating a job
 
-When you land on a job page and see the JSeek button row, assess it before applying:
+When you land on a job page and see the Hemline button row, assess it before applying:
 
 1. **Do the H1-B badge and seniority match?** Already answered on jseek.co — or check the company name against your h1b_data.json knowledge.
 2. **Is the JD worth tailoring?** Skim it. If it's a stretch or a clear mismatch, skip.
@@ -90,7 +90,7 @@ These are pages on Greenhouse, Lever, Workday, Ashby, iCIMS, SmartRecruiters, Ba
 
 ### A. Tailor your resume
 
-Click **Resume** in the JSeek button row.
+Click **Resume** in the Hemline button row.
 
 - The extension scrapes the JD
 - The server rewrites `swe.tex` to the role, picks the best skill rows and projects, compiles a PDF
@@ -210,7 +210,7 @@ Check the **Stats** panel for today's session:
 
 | Problem | Fix |
 |---|---|
-| JSeek buttons not appearing | Server offline — run `npm start`. Check http://localhost:4567/health |
+| Hemline buttons not appearing | Server offline — run `npm start`. Check http://localhost:4567/health |
 | Buttons greyed out | Same — server must be running during active use |
 | Resume PDF didn't download | Check Downloads folder; look for a browser alert with a LaTeX error message |
 | Auto-Fill clicked but 0 fields filled | The form may use non-standard field names — fill manually; open an issue to add selectors |

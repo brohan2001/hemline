@@ -175,7 +175,7 @@ async function fetchJson(url, ms = 8000) {
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), ms)
   try {
-    const resp = await fetch(url, { signal: ctrl.signal, headers: { 'User-Agent': 'jseek-jobstream/1.0' } })
+    const resp = await fetch(url, { signal: ctrl.signal, headers: { 'User-Agent': 'hemline-jobstream/1.0' } })
     if (!resp.ok) return null
     return await resp.json()
   } catch {
@@ -220,7 +220,7 @@ async function fetchJsonPost(url, body, ms = 10000) {
   try {
     const resp = await fetch(url, {
       method: 'POST', signal: ctrl.signal,
-      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'User-Agent': 'jseek-jobstream/1.0' },
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'User-Agent': 'hemline-jobstream/1.0' },
       body: JSON.stringify(body),
     })
     if (!resp.ok) return null

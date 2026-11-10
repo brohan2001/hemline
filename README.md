@@ -1,4 +1,4 @@
-# JSeek Enhancer
+# Hemline
 
 A browser extension (Chrome MV3 + Firefox) that tailors your LaTeX resume and cover letter to the job posting you are viewing. It works on LinkedIn, Indeed, Greenhouse, Lever, Workday, Ashby and 12 other platforms, plus any other careers page through an opt-in semantic scraper.
 
@@ -26,8 +26,8 @@ For **using or building the extension**, all you need is Node.js 20 or newer. Th
 | RelayFreeLLM (optional) | Free-tier LLM gateway — see `docs/relay-llm-setup.md` |
 
 ```bash
-git clone https://github.com/brohan2001/resume-extension.git
-cd resume-extension
+git clone https://github.com/brohan2001/hemline.git
+cd hemline
 npm install
 ```
 
@@ -65,7 +65,7 @@ It listens on **http://localhost:4567**. On startup it auto-spawns the RelayFree
 
 | Endpoint | What it does |
 |---|---|
-| `POST /tailor` | Tailors `resumes/swe.tex` to a JD, compiles PDF, returns it with `X-JSeek-Match-Score` ATS header |
+| `POST /tailor` | Tailors `resumes/swe.tex` to a JD, compiles PDF, returns it with `X-Hemline-Match-Score` ATS header |
 | `POST /cover-letter` | Generates a 3-paragraph cover letter PDF from the template |
 | `POST /cold-message` | Returns a <300-char LinkedIn connection message |
 | `POST /cold-email` | Returns `{ subject, body }` for a recruiter cold email |
@@ -165,7 +165,7 @@ Then `about:debugging` → This Firefox → Load Temporary Add-on → `dist/fire
 
 ### Using the local server instead (developers)
 
-Settings → Advanced → Processing → **My local JSeek server**. Requests then go to `server.js` on port 4567 (pdflatex + Claude CLI/RelayFreeLLM) instead of your API keys. Set `CANDIDATE_NAME` and `CANDIDATE_HIGHLIGHTS` in `.env` to personalize the server's prompts.
+Settings → Advanced → Processing → **My local Hemline server**. Requests then go to `server.js` on port 4567 (pdflatex + Claude CLI/RelayFreeLLM) instead of your API keys. Set `CANDIDATE_NAME` and `CANDIDATE_HIGHLIGHTS` in `.env` to personalize the server's prompts.
 
 ### What it does on job pages
 
@@ -200,7 +200,7 @@ npm run test:e2e      # builds dist/chrome, loads it headless in Chromium, and r
                       # mocked LLM responses (no key or network quota needed)
 ```
 
-`test:live` and `test:ui-live` are excluded from `npm test` (they need a live server / a real browser) and opt in via the `JSEEK_LIVE=1` env flag set by their scripts. `test:ui-live` opens a visible Chromium window — extensions don't load headless.
+`test:live` and `test:ui-live` are excluded from `npm test` (they need a live server / a real browser) and opt in via the `HEMLINE_LIVE=1` env flag set by their scripts. `test:ui-live` opens a visible Chromium window — extensions don't load headless.
 
 ---
 

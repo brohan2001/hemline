@@ -25,7 +25,7 @@ let llmProvider = 'claude'
 let serverUp = true
 let backendMode = 'extension'
 let notReadyReason = ''
-let jseekBusy = false
+let hemlineBusy = false
 let batchApplyActive = false
 
 const JOB_STATES = {}
@@ -60,25 +60,25 @@ function makeToggleButton(id, label) {
   btn.id = id
   btn.textContent = label
   btn.dataset.active = 'false'
-  btn.className = 'jseek-toggle'
+  btn.className = 'hemline-toggle'
   return btn
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 injectStyle(`
-  .jseek-btn-row {
+  .hemline-btn-row {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 6px;
     margin: 8px 0;
   }
-  .jseek-btn-row button:disabled {
+  .hemline-btn-row button:disabled {
     opacity: 0.5;
     cursor: not-allowed;
   }
 
-  .jseek-toggle {
+  .hemline-toggle {
     display: block;
     width: 100%;
     padding: 7px 10px;
@@ -93,14 +93,14 @@ injectStyle(`
     text-align: left;
     transition: background 0.15s;
   }
-  .jseek-toggle[data-active="true"] {
+  .hemline-toggle[data-active="true"] {
     background: #dbeafe;
     border-color: #3b82f6;
     color: #1d4ed8;
   }
-  .jseek-toggle:hover { background: #e5e7eb; }
+  .hemline-toggle:hover { background: #e5e7eb; }
 
-  .jseek-h1b-badge {
+  .hemline-h1b-badge {
     display: inline-block;
     font-size: 11px;
     font-weight: 600;
@@ -113,13 +113,13 @@ injectStyle(`
     vertical-align: middle;
     white-space: nowrap;
   }
-  .jseek-h1b-badge.low {
+  .hemline-h1b-badge.low {
     background: #fee2e2;
     color: #991b1b;
     border-color: #fca5a5;
   }
 
-  .jseek-hidden { display: none !important; }
+  .hemline-hidden { display: none !important; }
 `)
 
 // ─── Feature 1: Action Buttons (Resume / Resume & CL) ────────────────────────
@@ -157,7 +157,7 @@ const bridgePending = new Map()
 
 function getBridgePort() {
   if (bridgePort) return bridgePort
-  bridgePort = chrome.runtime.connect({ name: 'jseek' })
+  bridgePort = chrome.runtime.connect({ name: 'hemline' })
   bridgePort.onMessage.addListener((msg) => {
     const pending = bridgePending.get(msg.id)
     if (!pending) return
@@ -171,7 +171,7 @@ function getBridgePort() {
   })
   bridgePort.onDisconnect.addListener(() => {
     bridgePort = null
-    for (const p of bridgePending.values()) p.reject(new Error('JSeek background restarted; please retry.'))
+    for (const p of bridgePending.values()) p.reject(new Error('Hemline background restarted; please retry.'))
     bridgePending.clear()
   })
   return bridgePort
@@ -195,19 +195,19 @@ function callEndpoint(op, payload, options = {}) {
 }
 
 function applyHealthState() {
-  if (jseekBusy) return
+  if (hemlineBusy) return
   const buttons = [
-    ...findAll('#jseek-btn-row button'),
-    ...findAll('#jseek-autofill-btn'),
+    ...findAll('#hemline-btn-row button'),
+    ...findAll('#hemline-autofill-btn'),
   ]
   for (const btn of buttons) {
     btn.disabled = !serverUp
     if (!serverUp) {
-      if (!btn.dataset.jseekTitle) btn.dataset.jseekTitle = btn.title
+      if (!btn.dataset.hemlineTitle) btn.dataset.hemlineTitle = btn.title
       btn.title = notReadyReason
-    } else if (btn.dataset.jseekTitle) {
-      btn.title = btn.dataset.jseekTitle
-      delete btn.dataset.jseekTitle
+    } else if (btn.dataset.hemlineTitle) {
+      btn.title = btn.dataset.hemlineTitle
+      delete btn.dataset.hemlineTitle
     }
   }
 }
@@ -218,11 +218,11 @@ async function pingHealth() {
     backendMode = st.backend
     serverUp = st.backend === 'local' || (st.hasKey && st.hasResume)
     notReadyReason = !st.hasKey
-      ? 'JSeek: add an API key on the options page'
-      : 'JSeek: import your resume on the options page'
+      ? 'Hemline: add an API key on the options page'
+      : 'Hemline: import your resume on the options page'
   } catch {
     serverUp = false
-    notReadyReason = 'JSeek background unavailable — reload the extension'
+    notReadyReason = 'Hemline background unavailable — reload the extension'
   }
   applyHealthState()
 }
@@ -231,7 +231,7 @@ async function confirmNotDuplicate(companyName, jobTitle) {
   try {
     const d = await callBackground('CHECK_DUPLICATE', { company: companyName, title: jobTitle })
     if (d.duplicate) {
-      return confirm(`JSeek: already applied to ${companyName} on ${d.lastDate} (${d.timesApplied}x in the last 30 days). Generate anyway?`)
+      return confirm(`Hemline: already applied to ${companyName} on ${d.lastDate} (${d.timesApplied}x in the last 30 days). Generate anyway?`)
     }
   } catch { /* check unavailable — never block generation */ }
   return true
@@ -259,7 +259,7 @@ function makePillButton(text, tooltip) {
 }
 
 function injectActionButtons(cfg) {
-  if (document.getElementById('jseek-btn-row')) return
+  if (document.getElementById('hemline-btn-row')) return
 
   const jdEl = cfg.slug === 'universal' ? findUniversalElements() : findFirst(cfg.jobDescription)
   if (!jdEl) return
@@ -269,8 +269,8 @@ function injectActionButtons(cfg) {
   const jobState = JOB_STATES[jobId] ?? {}
 
   const wrapper = document.createElement('div')
-  wrapper.id = 'jseek-btn-row'
-  wrapper.className = 'jseek-btn-row'
+  wrapper.id = 'hemline-btn-row'
+  wrapper.className = 'hemline-btn-row'
 
   const btnResume  = makePillButton('Resume', 'Tailor Resume')
   const btnBoth    = makePillButton('Resume & CL', 'Tailor Resume & Cover Letter')
@@ -291,7 +291,7 @@ function injectActionButtons(cfg) {
   if (jobState.email === 'done') btnEmail.textContent = 'Email Opened ✓'
 
   function setBusy(busy) {
-    jseekBusy = busy
+    hemlineBusy = busy
     btnResume.disabled  = busy
     btnBoth.disabled    = busy
     btnMessage.disabled = busy
@@ -304,7 +304,7 @@ function injectActionButtons(cfg) {
 
   btnResume.addEventListener('click', async () => {
     const jobDescription = jdEl.innerText.trim()
-    if (!jobDescription) { alert('JSeek Enhancer: no job description found.'); return }
+    if (!jobDescription) { alert('Hemline: no job description found.'); return }
 
     const { companyName, jobTitle } = getDrawerContext(cfg)
     if (companyName && !(await confirmNotDuplicate(companyName, jobTitle))) return
@@ -326,7 +326,7 @@ function injectActionButtons(cfg) {
       setTimeout(() => { btnResume.textContent = resumeFilename + ' ✓' }, 3000)
     } catch (err) {
       clearInterval(timerInterval); timerInterval = null
-      alert(`JSeek Enhancer: ${err.message}`)
+      alert(`Hemline: ${err.message}`)
       btnResume.textContent = 'Resume'
     } finally {
       clearInterval(timerInterval)
@@ -336,7 +336,7 @@ function injectActionButtons(cfg) {
 
   btnBoth.addEventListener('click', async () => {
     const jobDescription = jdEl.innerText.trim()
-    if (!jobDescription) { alert('JSeek Enhancer: no job description found.'); return }
+    if (!jobDescription) { alert('Hemline: no job description found.'); return }
 
     const { companyName, jobTitle } = getDrawerContext(cfg)
     if (companyName && !(await confirmNotDuplicate(companyName, jobTitle))) return
@@ -361,7 +361,7 @@ function injectActionButtons(cfg) {
       setTimeout(() => { btnBoth.textContent = `${resumeFilename} + CL ✓` }, 3000)
     } catch (err) {
       clearInterval(timerInterval); timerInterval = null
-      alert(`JSeek Enhancer: ${err.message}`)
+      alert(`Hemline: ${err.message}`)
       btnBoth.textContent = 'Resume & CL'
     } finally {
       clearInterval(timerInterval)
@@ -371,7 +371,7 @@ function injectActionButtons(cfg) {
 
   btnMessage.addEventListener('click', async () => {
     const jd = findFirst(cfg.jobDescription)?.innerText.trim()
-    if (!jd) { alert('JSeek Enhancer: no job description found.'); return }
+    if (!jd) { alert('Hemline: no job description found.'); return }
 
     const { companyName, jobTitle } = getDrawerContext(cfg)
 
@@ -394,7 +394,7 @@ function injectActionButtons(cfg) {
       setTimeout(() => { btnMessage.textContent = 'Message' }, 3000)
     } catch (err) {
       clearInterval(timerInterval); timerInterval = null
-      alert(`JSeek Enhancer: ${err.message}`)
+      alert(`Hemline: ${err.message}`)
       btnMessage.textContent = 'Message'
     } finally {
       clearInterval(timerInterval)
@@ -404,7 +404,7 @@ function injectActionButtons(cfg) {
 
   btnEmail.addEventListener('click', async () => {
     const jd = findFirst(cfg.jobDescription)?.innerText.trim()
-    if (!jd) { alert('JSeek Enhancer: no job description found.'); return }
+    if (!jd) { alert('Hemline: no job description found.'); return }
 
     const { companyName, jobTitle } = getDrawerContext(cfg)
 
@@ -423,7 +423,7 @@ function injectActionButtons(cfg) {
       setTimeout(() => { btnEmail.textContent = 'Email' }, 3000)
     } catch (err) {
       clearInterval(timerInterval); timerInterval = null
-      alert(`JSeek Enhancer: ${err.message}`)
+      alert(`Hemline: ${err.message}`)
       btnEmail.textContent = 'Email'
     } finally {
       clearInterval(timerInterval)
@@ -630,13 +630,13 @@ async function fillResumeUpload(root = document) {
 }
 
 function injectAutoFillButton() {
-  if (document.getElementById('jseek-autofill-btn')) return
+  if (document.getElementById('hemline-autofill-btn')) return
 
   const form = findFirst('form')
   if (!form) return
 
   const btn = makePillButton('Auto-Fill', 'Fill profile details and attach your resume to this application form')
-  btn.id = 'jseek-autofill-btn'
+  btn.id = 'hemline-autofill-btn'
   btn.addEventListener('click', async (e) => {
     e.preventDefault()
     btn.textContent = 'Filling…'
@@ -669,8 +669,8 @@ function highlightNextButton(root = document) {
 const LI_EASY_APPLY_MODAL = '[class*="jobs-easy-apply-modal"], [class*="easy-apply-content"]'
 
 function watchLinkedInEasyApply() {
-  if (document.body.dataset.jseekLiWatcher) return
-  document.body.dataset.jseekLiWatcher = '1'
+  if (document.body.dataset.hemlineLiWatcher) return
+  document.body.dataset.hemlineLiWatcher = '1'
 
   let fillTimer = null
   const observer = new MutationObserver(() => {
@@ -727,9 +727,9 @@ function getUniversalCompany() {
 
 // ─── Feature 2: Enhanced Seniority Filter ────────────────────────────────────
 function injectSeniorityFilter(sidebar) {
-  if (document.getElementById('jseek-seniority-toggle')) return
+  if (document.getElementById('hemline-seniority-toggle')) return
 
-  const btn = makeToggleButton('jseek-seniority-toggle', '🎓 Enhanced Early Career')
+  const btn = makeToggleButton('hemline-seniority-toggle', '🎓 Enhanced Early Career')
   btn.title = 'Show only entry-level roles; hide Senior / Lead / Staff'
 
   btn.addEventListener('click', () => {
@@ -747,14 +747,14 @@ function applySeniorityFilter() {
     const title = titleEl?.textContent ?? ''
 
     if (!seniorityFilterActive) {
-      card.classList.remove('jseek-hidden')
+      card.classList.remove('hemline-hidden')
       return
     }
 
     if (SENIOR_RE.test(title)) {
-      card.classList.add('jseek-hidden')
+      card.classList.add('hemline-hidden')
     } else {
-      card.classList.remove('jseek-hidden')
+      card.classList.remove('hemline-hidden')
     }
   })
 }
@@ -762,14 +762,14 @@ function applySeniorityFilter() {
 // ─── Feature 3: H1-B Badges & Filter ─────────────────────────────────────────
 function injectH1bBadges() {
   findAll(activeCfg.companyName).forEach(el => {
-    if (el.querySelector('.jseek-h1b-badge')) return
+    if (el.querySelector('.hemline-h1b-badge')) return
 
     const company = el.textContent.trim()
     const count = lookupH1b(company)
     if (count === null) return
 
     const badge = document.createElement('span')
-    badge.className = 'jseek-h1b-badge' + (count < H1B_THRESHOLD ? ' low' : '')
+    badge.className = 'hemline-h1b-badge' + (count < H1B_THRESHOLD ? ' low' : '')
     badge.textContent = `H1-B: ${count.toLocaleString()}`
     badge.title = `${company} sponsored ${count.toLocaleString()} H1-B visas (historical)`
     el.appendChild(badge)
@@ -785,9 +785,9 @@ function lookupH1b(companyName) {
 }
 
 function injectH1bFilter(sidebar) {
-  if (document.getElementById('jseek-h1b-toggle')) return
+  if (document.getElementById('hemline-h1b-toggle')) return
 
-  const btn = makeToggleButton('jseek-h1b-toggle', '🌐 H1-B Sponsors Only')
+  const btn = makeToggleButton('hemline-h1b-toggle', '🌐 H1-B Sponsors Only')
   btn.title = `Show only companies with ≥${H1B_THRESHOLD} H1-B sponsorships`
 
   btn.addEventListener('click', () => {
@@ -802,7 +802,7 @@ function injectH1bFilter(sidebar) {
 function applyH1bFilter() {
   findAll(activeCfg.jobCards).forEach(card => {
     if (!h1bFilterActive) {
-      if (!seniorityFilterActive) card.classList.remove('jseek-hidden')
+      if (!seniorityFilterActive) card.classList.remove('hemline-hidden')
       return
     }
 
@@ -811,9 +811,9 @@ function applyH1bFilter() {
     const count = lookupH1b(company)
 
     if (count === null || count < H1B_THRESHOLD) {
-      card.classList.add('jseek-hidden')
+      card.classList.add('hemline-hidden')
     } else if (!seniorityFilterActive) {
-      card.classList.remove('jseek-hidden')
+      card.classList.remove('hemline-hidden')
     }
   })
 }
@@ -823,9 +823,9 @@ function applyH1bFilter() {
 // through the user's own API keys configured on the options page.
 function injectLlmToggle(sidebar) {
   if (backendMode !== 'local') return
-  if (document.getElementById('jseek-llm-toggle')) return
+  if (document.getElementById('hemline-llm-toggle')) return
 
-  const btn = makeToggleButton('jseek-llm-toggle', llmProvider === 'relay' ? '⚡ LLM: Relay (Local)' : '⚡ LLM: Claude')
+  const btn = makeToggleButton('hemline-llm-toggle', llmProvider === 'relay' ? '⚡ LLM: Relay (Local)' : '⚡ LLM: Claude')
   btn.title = 'Switch between Claude (remote) and RelayFreeLLM (local gateway)'
   btn.dataset.active = String(llmProvider === 'relay')
 
@@ -841,9 +841,9 @@ function injectLlmToggle(sidebar) {
 
 // ─── Feature 6: Batch Apply Toggle ───────────────────────────────────────────
 function injectBatchApplyToggle(sidebar) {
-  if (document.getElementById('jseek-batch-toggle')) return
+  if (document.getElementById('hemline-batch-toggle')) return
 
-  const btn = makeToggleButton('jseek-batch-toggle', '📋 Batch Apply')
+  const btn = makeToggleButton('hemline-batch-toggle', '📋 Batch Apply')
   btn.title = 'Enable batch job selection and one-click multi-apply'
   btn.dataset.active = String(batchApplyActive)
 
@@ -853,8 +853,8 @@ function injectBatchApplyToggle(sidebar) {
     chrome.storage.local.set({ batchApplyEnabled: batchApplyActive })
 
     if (!batchApplyActive) {
-      findAll('.jseek-select-box').forEach(el => el.remove())
-      document.getElementById('jseek-apply-bar')?.remove()
+      findAll('.hemline-select-box').forEach(el => el.remove())
+      document.getElementById('hemline-apply-bar')?.remove()
       selectedJobs.clear()
     } else {
       injectJobSelection(activeCfg)
@@ -867,13 +867,13 @@ function injectBatchApplyToggle(sidebar) {
 // ─── Feature 4: LinkedIn Recruiter Finder ────────────────────────────────────
 function injectLinkedInButtons() {
   findAll(activeCfg.companyName).forEach(el => {
-    if (el.querySelector('.jseek-li-btn')) return
+    if (el.querySelector('.hemline-li-btn')) return
 
     const company = el.textContent.replace(/H1-B:.*$/i, '').trim()
     if (!company) return
 
     const btn = document.createElement('span')
-    btn.className = 'jseek-li-btn'
+    btn.className = 'hemline-li-btn'
     btn.title = `Find recruiters at ${company} on LinkedIn`
     btn.innerHTML = LI_SVG
 
@@ -904,22 +904,22 @@ function injectDrawerEnhancements() {
   const company = anchor.textContent.trim()
   if (!company) return
 
-  if (drawerHeader.dataset.jseekCompany === company) return
-  drawerHeader.dataset.jseekCompany = company
-  drawerHeader.querySelector('.jseek-h1b-badge')?.remove()
-  drawerHeader.querySelector('.jseek-li-btn')?.remove()
+  if (drawerHeader.dataset.hemlineCompany === company) return
+  drawerHeader.dataset.hemlineCompany = company
+  drawerHeader.querySelector('.hemline-h1b-badge')?.remove()
+  drawerHeader.querySelector('.hemline-li-btn')?.remove()
 
   const count = lookupH1b(company)
   if (count !== null) {
     const badge = document.createElement('span')
-    badge.className = 'jseek-h1b-badge' + (count < H1B_THRESHOLD ? ' low' : '')
+    badge.className = 'hemline-h1b-badge' + (count < H1B_THRESHOLD ? ' low' : '')
     badge.textContent = `H1-B: ${count.toLocaleString()}`
     badge.title = `${company} sponsored ${count.toLocaleString()} H1-B visas (historical)`
     anchor.insertAdjacentElement('afterend', badge)
   }
 
   const liBtn = document.createElement('span')
-  liBtn.className = 'jseek-li-btn'
+  liBtn.className = 'hemline-li-btn'
   liBtn.title = `Find recruiters at ${company} on LinkedIn`
   liBtn.innerHTML = LI_SVG
   liBtn.addEventListener('click', (e) => {
@@ -934,7 +934,7 @@ function injectDrawerEnhancements() {
   drawerHeader.appendChild(liBtn)
 }
 
-// ─── Feature: 1-Click Batch Apply (jseek watchlist) ─────────────────────────
+// ─── Feature: 1-Click Batch Apply (jseek.co watchlist) ─────────────────────────
 // CLEAN_ATS auto-submit; everything else fills and stops at review.
 const CLEAN_ATS = ['greenhouse', 'lever', 'ashby']
 
@@ -942,10 +942,10 @@ const selectedJobs = new Map()
 const progressJobs = new Map()
 
 injectStyle(`
-  /* jseek cards carry an absolute inset-0 overlay button that intercepts every
+  /* jseek.co cards carry an absolute inset-0 overlay button that intercepts every
      click — position:relative + a high z-index lifts our checkbox above it so
      manual toggles actually land on the input. */
-  .jseek-select-box {
+  .hemline-select-box {
     position: relative;
     z-index: 20;
     display: inline-flex;
@@ -953,9 +953,9 @@ injectStyle(`
     margin-right: 8px;
     flex-shrink: 0;
   }
-  .jseek-select-box input { position: relative; z-index: 20; width: 16px; height: 16px; cursor: pointer; accent-color: #3b82f6; }
+  .hemline-select-box input { position: relative; z-index: 20; width: 16px; height: 16px; cursor: pointer; accent-color: #3b82f6; }
 
-  #jseek-apply-bar {
+  #hemline-apply-bar {
     position: fixed;
     bottom: 16px;
     right: 16px;
@@ -970,7 +970,7 @@ injectStyle(`
     color: #111827;
     overflow: hidden;
   }
-  #jseek-apply-bar .jseek-bar-head {
+  #hemline-apply-bar .hemline-bar-head {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -979,8 +979,8 @@ injectStyle(`
     border-bottom: 1px solid #e5e7eb;
     font-weight: 600;
   }
-  #jseek-apply-bar .jseek-bar-actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 12px; }
-  #jseek-apply-bar button {
+  #hemline-apply-bar .hemline-bar-actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 12px; }
+  #hemline-apply-bar button {
     flex: 1 1 auto;
     padding: 6px 8px;
     border: 1px solid #d1d5db;
@@ -991,17 +991,17 @@ injectStyle(`
     color: #374151;
     cursor: pointer;
   }
-  #jseek-apply-bar button.primary { background: #2563eb; border-color: #2563eb; color: #fff; flex-basis: 100%; }
-  #jseek-apply-bar button:disabled { opacity: 0.5; cursor: not-allowed; }
-  #jseek-apply-bar .jseek-skip { display: flex; align-items: center; gap: 6px; padding: 0 12px 8px; font-size: 12px; color: #6b7280; }
-  #jseek-apply-progress { max-height: 200px; overflow-y: auto; border-top: 1px solid #e5e7eb; }
-  #jseek-apply-progress:empty { display: none; }
-  .jseek-prog-row { display: flex; justify-content: space-between; gap: 8px; padding: 6px 12px; border-bottom: 1px solid #f3f4f6; }
-  .jseek-prog-row .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .jseek-prog-row .s { flex-shrink: 0; font-weight: 600; font-size: 11px; }
-  .jseek-prog-row .s.submitted { color: #047857; }
-  .jseek-prog-row .s.needs_review { color: #b45309; }
-  .jseek-prog-row .s.failed, .jseek-prog-row .s.duplicate { color: #b91c1c; }
+  #hemline-apply-bar button.primary { background: #2563eb; border-color: #2563eb; color: #fff; flex-basis: 100%; }
+  #hemline-apply-bar button:disabled { opacity: 0.5; cursor: not-allowed; }
+  #hemline-apply-bar .hemline-skip { display: flex; align-items: center; gap: 6px; padding: 0 12px 8px; font-size: 12px; color: #6b7280; }
+  #hemline-apply-progress { max-height: 200px; overflow-y: auto; border-top: 1px solid #e5e7eb; }
+  #hemline-apply-progress:empty { display: none; }
+  .hemline-prog-row { display: flex; justify-content: space-between; gap: 8px; padding: 6px 12px; border-bottom: 1px solid #f3f4f6; }
+  .hemline-prog-row .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hemline-prog-row .s { flex-shrink: 0; font-weight: 600; font-size: 11px; }
+  .hemline-prog-row .s.submitted { color: #047857; }
+  .hemline-prog-row .s.needs_review { color: #b45309; }
+  .hemline-prog-row .s.failed, .hemline-prog-row .s.duplicate { color: #b91c1c; }
 `)
 
 function showParam() {
@@ -1009,9 +1009,9 @@ function showParam() {
 }
 
 // The watchlist card holds no apply URL — it only opens a drawer (?show={id})
-// that renders the real external ATS link, which jseek tags with
+// that renders the real external ATS link, which jseek.co tags with
 // utm_source=jobseek. So pick the jobseek-tagged external link, else the first
-// non-jseek http link the drawer rendered.
+// non-jseek.co http link the drawer rendered.
 function findDrawerApplyUrl() {
   const externals = findAll('a[href]').filter(a => {
     try { return /^https?:/.test(a.href) && new URL(a.href).hostname !== 'jseek.co' } catch { return false }
@@ -1051,19 +1051,19 @@ function injectJobSelection(cfg) {
 
   for (const card of cards) {
     try {
-    if (card.querySelector('.jseek-select-box')) {
+    if (card.querySelector('.hemline-select-box')) {
       // Re-sync checkbox state after a React re-render reused the node.
-      const box = card.querySelector('.jseek-select-box input')
-      if (box) box.checked = selectedJobs.has(card.dataset.jseekKey)
+      const box = card.querySelector('.hemline-select-box input')
+      if (box) box.checked = selectedJobs.has(card.dataset.hemlineKey)
       continue
     }
     const info = getCardInfo(card, cfg)
-    card.dataset.jseekKey = info.id
+    card.dataset.hemlineKey = info.id
 
     const wrap = document.createElement('label')
     // relative + z-20 mirror the CSS stacking lift in Tailwind terms, in case
     // the page's utility classes win specificity over our injected stylesheet.
-    wrap.className = 'jseek-select-box relative z-20'
+    wrap.className = 'hemline-select-box relative z-20'
     const box = document.createElement('input')
     box.type = 'checkbox'
     box.className = 'relative z-20'
@@ -1085,7 +1085,7 @@ function injectJobSelection(cfg) {
     card.prepend(wrap)
     } catch (err) {
       // One malformed card must not break injection for the rest of the list.
-      console.warn('JSeek Enhancer: skipped a watchlist card', err)
+      console.warn('Hemline: skipped a watchlist card', err)
     }
   }
   ensureApplyBar()
@@ -1093,58 +1093,58 @@ function injectJobSelection(cfg) {
 }
 
 function ensureApplyBar() {
-  if (document.getElementById('jseek-apply-bar')) return
+  if (document.getElementById('hemline-apply-bar')) return
 
   const bar = document.createElement('div')
-  bar.id = 'jseek-apply-bar'
+  bar.id = 'hemline-apply-bar'
   bar.innerHTML = `
-    <div class="jseek-bar-head"><span>Batch Apply</span><span id="jseek-apply-count">0 selected</span></div>
-    <div class="jseek-skip"><input type="checkbox" id="jseek-skip-tailor"><label for="jseek-skip-tailor">Skip tailoring (use master resume)</label></div>
-    <div class="jseek-bar-actions">
-      <button id="jseek-apply-go" class="primary">Apply to 0 selected</button>
-      <button id="jseek-apply-all">Select visible</button>
-      <button id="jseek-apply-clear">Clear</button>
-      <button id="jseek-apply-pause" style="display:none">Pause</button>
-      <button id="jseek-apply-stop" style="display:none">Stop</button>
+    <div class="hemline-bar-head"><span>Batch Apply</span><span id="hemline-apply-count">0 selected</span></div>
+    <div class="hemline-skip"><input type="checkbox" id="hemline-skip-tailor"><label for="hemline-skip-tailor">Skip tailoring (use master resume)</label></div>
+    <div class="hemline-bar-actions">
+      <button id="hemline-apply-go" class="primary">Apply to 0 selected</button>
+      <button id="hemline-apply-all">Select visible</button>
+      <button id="hemline-apply-clear">Clear</button>
+      <button id="hemline-apply-pause" style="display:none">Pause</button>
+      <button id="hemline-apply-stop" style="display:none">Stop</button>
     </div>
-    <div id="jseek-apply-progress"></div>`
+    <div id="hemline-apply-progress"></div>`
   document.body.appendChild(bar)
 
-  bar.querySelector('#jseek-apply-go').addEventListener('click', startApplyQueue)
-  bar.querySelector('#jseek-apply-all').addEventListener('click', () => {
+  bar.querySelector('#hemline-apply-go').addEventListener('click', startApplyQueue)
+  bar.querySelector('#hemline-apply-all').addEventListener('click', () => {
     findAll(activeCfg.jobCards).forEach(card => {
-      const box = card.querySelector('.jseek-select-box input')
+      const box = card.querySelector('.hemline-select-box input')
       if (box && !box.checked) { box.checked = true; box.dispatchEvent(new Event('change')) }
     })
   })
-  bar.querySelector('#jseek-apply-clear').addEventListener('click', () => {
+  bar.querySelector('#hemline-apply-clear').addEventListener('click', () => {
     selectedJobs.clear()
-    findAll('.jseek-select-box input').forEach(b => { b.checked = false })
+    findAll('.hemline-select-box input').forEach(b => { b.checked = false })
     updateApplyBar()
   })
-  bar.querySelector('#jseek-apply-pause').addEventListener('click', e => {
+  bar.querySelector('#hemline-apply-pause').addEventListener('click', e => {
     const paused = e.target.dataset.paused === 'true'
     chrome.runtime.sendMessage({ type: paused ? 'RESUME_QUEUE' : 'PAUSE_QUEUE' })
     e.target.dataset.paused = String(!paused)
     e.target.textContent = paused ? 'Pause' : 'Resume'
   })
-  bar.querySelector('#jseek-apply-stop').addEventListener('click', () => {
+  bar.querySelector('#hemline-apply-stop').addEventListener('click', () => {
     chrome.runtime.sendMessage({ type: 'STOP_QUEUE' })
   })
 }
 
 function updateApplyBar() {
   const count = selectedJobs.size
-  const countEl = document.getElementById('jseek-apply-count')
-  const goEl = document.getElementById('jseek-apply-go')
+  const countEl = document.getElementById('hemline-apply-count')
+  const goEl = document.getElementById('hemline-apply-go')
   if (countEl) countEl.textContent = `${count} selected`
   if (goEl) { goEl.textContent = `Apply to ${count} selected`; goEl.disabled = count === 0 || !serverUp }
 }
 
 function setQueueRunning(running) {
-  const pause = document.getElementById('jseek-apply-pause')
-  const stop = document.getElementById('jseek-apply-stop')
-  const go = document.getElementById('jseek-apply-go')
+  const pause = document.getElementById('hemline-apply-pause')
+  const stop = document.getElementById('hemline-apply-stop')
+  const go = document.getElementById('hemline-apply-go')
   if (pause) pause.style.display = running ? '' : 'none'
   if (stop) stop.style.display = running ? '' : 'none'
   if (go) go.disabled = running || selectedJobs.size === 0
@@ -1158,15 +1158,15 @@ async function startApplyQueue() {
   renderProgress()
   setQueueRunning(true)
 
-  console.log('[JSeek] starting batch apply for', jobs.length, 'jobs')
+  console.log('[Hemline] starting batch apply for', jobs.length, 'jobs')
 
   const ready = []
   for (const job of jobs) {
     job.status = 'resolving'
     renderProgress()
-    const card = findAll(activeCfg.jobCards).find(c => c.dataset.jseekKey === job.id)
+    const card = findAll(activeCfg.jobCards).find(c => c.dataset.hemlineKey === job.id)
     const url = card ? await resolveCardApplyUrl(card) : null
-    console.log('[JSeek] resolved', job.company, '—', job.title, '→', url)
+    console.log('[Hemline] resolved', job.company, '—', job.title, '→', url)
     if (!url) {
       job.status = 'failed'
       job.error = card ? 'no apply link in drawer' : 'card not found'
@@ -1182,17 +1182,17 @@ async function startApplyQueue() {
   }
 
   if (!ready.length) { setQueueRunning(false); return }
-  const skipTailoring = document.getElementById('jseek-skip-tailor')?.checked ?? false
+  const skipTailoring = document.getElementById('hemline-skip-tailor')?.checked ?? false
   chrome.runtime.sendMessage({ type: 'START_APPLY_QUEUE', jobs: ready, policy: { skipTailoring, provider: llmProvider } })
 }
 
 function renderProgress() {
-  const box = document.getElementById('jseek-apply-progress')
+  const box = document.getElementById('hemline-apply-progress')
   if (!box) return
   box.textContent = ''
   for (const job of progressJobs.values()) {
     const row = document.createElement('div')
-    row.className = 'jseek-prog-row'
+    row.className = 'hemline-prog-row'
 
     const t = document.createElement('span')
     t.className = 't'
@@ -1322,7 +1322,7 @@ async function loadH1bData() {
     const resp = await fetch(url)
     h1bData = await resp.json()
   } catch {
-    console.warn('JSeek Enhancer: failed to load h1b_data.json')
+    console.warn('Hemline: failed to load h1b_data.json')
   }
 }
 

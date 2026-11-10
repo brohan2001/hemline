@@ -1,7 +1,7 @@
 // Loads the built extension (dist/chrome) into Chromium and drives the real
 // service worker → offscreen document → WASM pdfTeX path. LLM HTTP calls are
 // intercepted, so no API key or network quota is needed.
-//   npm run build:chrome && JSEEK_E2E=1 npx vitest run tests/extension.e2e.test.js
+//   npm run build:chrome && HEMLINE_E2E=1 npx vitest run tests/extension.e2e.test.js
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { chromium } from 'playwright'
 import { readFileSync, mkdtempSync } from 'fs'
@@ -12,7 +12,7 @@ import { shardOf } from '../pipeline/jobfilter.js'
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
 const EXT = path.join(ROOT, 'dist', 'chrome')
-const run = process.env.JSEEK_E2E ? describe : describe.skip
+const run = process.env.HEMLINE_E2E ? describe : describe.skip
 
 const TEMPLATE = readFileSync(path.join(ROOT, 'templates', 'resume_template.tex'), 'utf8')
 const SKILLS = TEMPLATE.slice(TEMPLATE.indexOf('\\section{Technical Skills}'), TEMPLATE.indexOf('%-----------PROJECTS'))
@@ -32,7 +32,7 @@ run('built extension (Chromium)', () => {
   const llmCalls = []
 
   beforeAll(async () => {
-    context = await chromium.launchPersistentContext(mkdtempSync(path.join(tmpdir(), 'jseek-e2e-')), {
+    context = await chromium.launchPersistentContext(mkdtempSync(path.join(tmpdir(), 'hemline-e2e-')), {
       channel: 'chromium',
       headless: true,
       args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`],
@@ -42,7 +42,7 @@ run('built extension (Chromium)', () => {
       llmCalls.push(body)
       await route.fulfill({ json: { choices: [{ message: { content: `${SKILLS}\n${PROJECTS}` } }] } })
     })
-    await context.route('https://brohan2001.github.io/resume-extension/**', async (route) => {
+    await context.route('https://brohan2001.github.io/hemline/**', async (route) => {
       const url = route.request().url()
       if (url.endsWith('/jobs.json')) return route.fulfill({ json: { ts: NOW, total: FEED_JOBS.length, shards: 32, jobs: FEED_JOBS } })
       if (url.endsWith(`/details/${shardOf('gh-1')}.json`)) return route.fulfill({ json: FEED_DETAILS })
@@ -132,13 +132,13 @@ run('built extension (Chromium)', () => {
     await context.route('https://boards.greenhouse.io/**', route => route.fulfill({ contentType: 'text/html', body: mock }))
     const job = await context.newPage()
     await job.goto('https://boards.greenhouse.io/acme/jobs/12345')
-    const btn = job.locator('#jseek-btn-row button', { hasText: /^Resume$/ })
+    const btn = job.locator('#hemline-btn-row button', { hasText: /^Resume$/ })
     await btn.waitFor()
     expect(await btn.isDisabled()).toBe(false)
     job.on('dialog', d => d.accept())
     await btn.click()
-    await job.waitForFunction(() => [...document.querySelectorAll('#jseek-btn-row button')].some(b => /match|✓/.test(b.textContent)), null, { timeout: 60_000 })
-    const label = await job.locator('#jseek-btn-row button').first().textContent()
+    await job.waitForFunction(() => [...document.querySelectorAll('#hemline-btn-row button')].some(b => /match|✓/.test(b.textContent)), null, { timeout: 60_000 })
+    const label = await job.locator('#hemline-btn-row button').first().textContent()
     expect(label).toMatch(/Resume ✓ \d+% match|_Resume_.*\.pdf ✓/)
     const downloads = await page.evaluate(() => new Promise(r => chrome.downloads.search({}, r)))
     // Playwright stores intercepted downloads under GUID names, so check the

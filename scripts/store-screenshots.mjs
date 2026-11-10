@@ -19,14 +19,14 @@ if (!feedDir || !existsSync(path.join(feedDir, 'jobs.json'))) {
 }
 mkdirSync(out, { recursive: true })
 
-const context = await chromium.launchPersistentContext(mkdtempSync(path.join(tmpdir(), 'jseek-shots-')), {
+const context = await chromium.launchPersistentContext(mkdtempSync(path.join(tmpdir(), 'hemline-shots-')), {
   channel: 'chromium',
   headless: true,
   viewport: { width: 1280, height: 800 },
   args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`],
 })
-await context.route('https://brohan2001.github.io/resume-extension/**', route => {
-  const rel = new URL(route.request().url()).pathname.replace('/resume-extension/', '')
+await context.route('https://brohan2001.github.io/hemline/**', route => {
+  const rel = new URL(route.request().url()).pathname.replace('/hemline/', '')
   const file = path.join(feedDir, rel)
   return existsSync(file) ? route.fulfill({ path: file }) : route.fulfill({ status: 404 })
 })

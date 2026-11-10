@@ -206,7 +206,7 @@ async function maybeSpawnRelay() {
 }
 
 const app = express()
-app.use(cors({ exposedHeaders: ['X-JSeek-Match-Score'] }))
+app.use(cors({ exposedHeaders: ['X-Hemline-Match-Score'] }))
 app.use(express.json({ limit: '2mb' }))
 app.use(express.static(path.join(__dirname, 'public')))
 
@@ -408,7 +408,7 @@ app.post('/tailor', async (req, res) => {
       await fs.copyFile(path.join(BUILD_DIR, 'swe.pdf'), path.join(RESUMES_DIR, 'swe.pdf')).catch(() => {})
       res.setHeader('Content-Type', 'application/pdf')
       res.setHeader('Content-Disposition', `attachment; filename="${filePrefix()}_Resume_${safe}.pdf"`)
-      res.setHeader('X-JSeek-Match-Score', String(match.score))
+      res.setHeader('X-Hemline-Match-Score', String(match.score))
       res.send(pdf)
 
       const totalMs = Math.round(performance.now() - t0)
@@ -521,7 +521,7 @@ if (isMain) {
     await maybeSpawnRelay()
     initStream()
     app.listen(PORT, '127.0.0.1', () => {
-      console.log(`JSeek Enhancer server running on http://127.0.0.1:${PORT}`)
+      console.log(`Hemline server running on http://127.0.0.1:${PORT}`)
       console.log(`Claude CLI: ${claudePath}`)
     })
   })()

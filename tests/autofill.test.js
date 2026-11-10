@@ -50,7 +50,7 @@ async function bootForm(profile) {
   dom.window.eval(siteConfigsCode)
   dom.window.eval(contentScriptCode)
   // Wait until init() has injected the Auto-Fill button (ATS slug) and set PROFILE.
-  for (let i = 0; i < 20 && !dom.window.document.getElementById('jseek-autofill-btn'); i++) {
+  for (let i = 0; i < 20 && !dom.window.document.getElementById('hemline-autofill-btn'); i++) {
     await new Promise(r => setTimeout(r, 10))
   }
   return dom

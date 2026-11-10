@@ -1,10 +1,10 @@
-# JSeek Enhancer — Architecture
+# Hemline — Architecture
 
 ## Standalone extension (public build)
 
 ```
 content_script.js / dashboard.js / options.js
-        │  chrome.runtime.connect('jseek') + keep-alive pings
+        │  chrome.runtime.connect('hemline') + keep-alive pings
         ▼
 background.js (MV3 service worker; Firefox: event page)
   ├─ pipeline/tailor.js   tailorResume / writeCoverLetter / writeColdMessage / writeColdEmail
@@ -14,7 +14,7 @@ background.js (MV3 service worker; Firefox: event page)
   ├─ store.js             chrome.storage.local (keys, resume, profile, ledger) + IndexedDB (PDFs)
   └─ chrome.downloads     <First>_<Last>_Resume_<Company>.pdf
 
-dashboard.js ──► https://brohan2001.github.io/resume-extension/jobs.json (+ details/<shard>.json)
+dashboard.js ──► https://brohan2001.github.io/hemline/jobs.json (+ details/<shard>.json)
                    ▲ .github/workflows/feed.yml → scripts/build-feed.mjs → jobstream.js
 ```
 
@@ -363,9 +363,9 @@ The `logs/` directory is created automatically on first request. It is `.gitigno
 |---|---|---|
 | `npm test` | unit + mock UI | All mocked tests (server logic, ledger, skills validation, jsdom injection against `tests/mocks/*.html`) |
 | `npm run test:live` | `tests/live.test.js` | End-to-end PDF generation against a running server + relay |
-| `npm run test:ui-live` | `tests/ui_live.test.js` | Playwright launches real Chromium with the unpacked extension and asserts `#jseek-btn-row` injection on live Greenhouse/Lever job pages; LinkedIn/Indeed are best-effort (bot protection) |
+| `npm run test:ui-live` | `tests/ui_live.test.js` | Playwright launches real Chromium with the unpacked extension and asserts `#hemline-btn-row` injection on live Greenhouse/Lever job pages; LinkedIn/Indeed are best-effort (bot protection) |
 
 The two live suites are excluded from `npm test` via `vitest.config.js` and opt back in
-through the `JSEEK_LIVE=1` env flag set by their npm scripts (vitest's CLI `--exclude`
+through the `HEMLINE_LIVE=1` env flag set by their npm scripts (vitest's CLI `--exclude`
 appends to the config exclude rather than overriding it, so an env flag is required).
 Playwright runs headed — Chrome extensions do not load in headless mode.

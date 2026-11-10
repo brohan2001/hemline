@@ -46,10 +46,10 @@ async function build(target, zip) {
   const count = (await readdir(out, { recursive: true })).length
   console.log(`Built dist/${target} (${count} entries)`)
   if (zip) {
-    const zipPath = path.join(ROOT, 'dist', `jseek-${target}.zip`)
+    const zipPath = path.join(ROOT, 'dist', `hemline-${target}.zip`)
     await rm(zipPath, { force: true })
     execFileSync('zip', ['-qr', '-X', zipPath, '.'], { cwd: out })
-    console.log(`  → dist/jseek-${target}.zip (${((await stat(zipPath)).size / 1e6).toFixed(1)} MB)`)
+    console.log(`  → dist/hemline-${target}.zip (${((await stat(zipPath)).size / 1e6).toFixed(1)} MB)`)
   }
 }
 

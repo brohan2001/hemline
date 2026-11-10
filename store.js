@@ -43,7 +43,7 @@ export async function checkDuplicate(company, title) {
 
 // ─── PDF blobs (IndexedDB) ───────────────────────────────────────────────────
 
-const DB_NAME = 'jseek'
+const DB_NAME = 'hemline'
 const STORE = 'pdfs'
 
 function openDb() {

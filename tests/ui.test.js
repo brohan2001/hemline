@@ -50,7 +50,7 @@ async function bootContentScript(slug, storageData = {}, responses = {}) {
   dom.window.eval(contentScriptCode)
 
   // init() awaits the storage promise before injecting; yield until it lands.
-  for (let i = 0; i < 10 && !dom.window.document.getElementById('jseek-btn-row'); i++) {
+  for (let i = 0; i < 10 && !dom.window.document.getElementById('hemline-btn-row'); i++) {
     await new Promise(r => setTimeout(r, 10))
   }
   return dom
@@ -62,7 +62,7 @@ describe('content script boots with a stored profile', () => {
       llmProvider: 'relay',
       profile: { firstName: 'Jane', email: 'jane@example.com' },
     })
-    expect(dom.window.document.getElementById('jseek-btn-row')).not.toBeNull()
+    expect(dom.window.document.getElementById('hemline-btn-row')).not.toBeNull()
     dom.window.close()
   })
 })
@@ -72,7 +72,7 @@ describe('standalone background bridge', () => {
     const dom = await bootContentScript('greenhouse', {}, {
       TAILOR: { filename: 'Jane_Doe_Resume_Acme.pdf', matchScore: 87 },
     })
-    const row = dom.window.document.getElementById('jseek-btn-row')
+    const row = dom.window.document.getElementById('hemline-btn-row')
     const btn = Array.from(row.querySelectorAll('button')).find(b => b.textContent === 'Resume')
     btn.click()
     for (let i = 0; i < 20 && !btn.textContent.includes('87%'); i++) await new Promise(r => setTimeout(r, 10))
@@ -86,7 +86,7 @@ describe('standalone background bridge', () => {
     const dom = await bootContentScript('greenhouse', {}, {
       STATUS: { backend: 'extension', hasKey: false, hasResume: false },
     })
-    const buttons = Array.from(dom.window.document.querySelectorAll('#jseek-btn-row button'))
+    const buttons = Array.from(dom.window.document.querySelectorAll('#hemline-btn-row button'))
     expect(buttons.every(b => b.disabled)).toBe(true)
     expect(buttons[0].title).toMatch(/add an API key/)
     dom.window.close()
@@ -94,7 +94,7 @@ describe('standalone background bridge', () => {
 
   it('hides the Claude/Relay toggle unless the local server backend is selected', async () => {
     const dom = await bootContentScript('jseek')
-    expect(dom.window.document.getElementById('jseek-llm-toggle')).toBeNull()
+    expect(dom.window.document.getElementById('hemline-llm-toggle')).toBeNull()
     dom.window.close()
   })
 })
@@ -103,8 +103,8 @@ describe('content script button injection across all 18 platforms', () => {
   for (const slug of Object.keys(PLATFORM_URLS)) {
     it(`injects Resume, Resume & CL, Message, and Email buttons on ${slug}`, async () => {
       const dom = await bootContentScript(slug)
-      const row = dom.window.document.getElementById('jseek-btn-row')
-      expect(row, `[${slug}] jseek-btn-row was not injected`).not.toBeNull()
+      const row = dom.window.document.getElementById('hemline-btn-row')
+      expect(row, `[${slug}] hemline-btn-row was not injected`).not.toBeNull()
 
       const buttons = Array.from(row.querySelectorAll('button'))
       const labels = buttons.map(b => b.textContent)
@@ -119,16 +119,16 @@ describe('content script button injection across all 18 platforms', () => {
 })
 
 // Selection checkboxes are opt-in via the sidebar Batch Apply toggle.
-describe('batch apply selection layer (jseek watchlist)', () => {
+describe('batch apply selection layer (jseek.co watchlist)', () => {
   it('injects a checkbox into every watchlist card and a floating apply bar', async () => {
     const dom = await bootContentScript('jseek', { batchApplyEnabled: true })
     const doc = dom.window.document
 
     const cards = doc.querySelectorAll('div.relative.flex.items-center.gap-3.rounded-md.px-2.py-2[class*="[contain:layout]"]')
     expect(cards.length).toBe(2)
-    expect(doc.querySelectorAll('.jseek-select-box input[type="checkbox"]').length).toBe(2)
-    expect(doc.getElementById('jseek-apply-bar')).not.toBeNull()
-    expect(doc.getElementById('jseek-apply-go')).not.toBeNull()
+    expect(doc.querySelectorAll('.hemline-select-box input[type="checkbox"]').length).toBe(2)
+    expect(doc.getElementById('hemline-apply-bar')).not.toBeNull()
+    expect(doc.getElementById('hemline-apply-go')).not.toBeNull()
     dom.window.close()
   })
 
@@ -137,7 +137,7 @@ describe('batch apply selection layer (jseek watchlist)', () => {
     const doc = dom.window.document
     const card = doc.querySelector('div.relative.flex.items-center[class*="[contain:layout]"]')
     // Each card holds exactly one checkbox even though runFeatures fires repeatedly.
-    expect(card.querySelectorAll('.jseek-select-box').length).toBe(1)
+    expect(card.querySelectorAll('.hemline-select-box').length).toBe(1)
     dom.window.close()
   })
 })
