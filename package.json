@@ -1,6 +1,7 @@
 {
   "name": "jseek-enhancer-server",
   "version": "1.0.0",
+  "license": "AGPL-3.0-or-later",
   "type": "module",
   "engines": {
     "node": ">=20"
@@ -13,13 +14,20 @@
     "test:ui": "vitest run tests/ui.test.js",
     "test:ui-live": "JSEEK_LIVE=1 vitest run tests/ui_live.test.js",
     "benchmark": "node --env-file=.env scripts/benchmark-models.js",
-    "build:firefox": "rm -rf dist/firefox && mkdir -p dist/firefox && cp manifest_firefox.json dist/firefox/manifest.json && cp background.js content_script.js site_configs.js h1b_data.json options.html options.js dist/firefox/"
+    "build": "node scripts/build-extension.mjs all --zip",
+    "build:chrome": "node scripts/build-extension.mjs chrome",
+    "build:firefox": "node scripts/build-extension.mjs firefox",
+    "build:texmf": "node scripts/texlive/build-texmf.mjs",
+    "vendor:sdk": "esbuild node_modules/@anthropic-ai/sdk/index.mjs --bundle --format=esm --platform=browser --minify --outfile=vendor/anthropic-sdk.js",
+    "test:e2e": "node scripts/build-extension.mjs chrome && JSEEK_E2E=1 vitest run tests/extension.e2e.test.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^4.19.0"
   },
   "devDependencies": {
+    "@anthropic-ai/sdk": "^1.7.0",
+    "esbuild": "^0.28.2",
     "jsdom": "^29.1.1",
     "nodemon": "^3.1.0",
     "playwright": "^1.60.0",

@@ -157,6 +157,84 @@ var SITE_CONFIGS = {
     injectTarget:        '#jobdescSec',
     injectPosition:      'beforebegin',
   },
+  ashby: {
+    slug:                'ashby',
+    jobDescription:      '[class*="ashby-job-posting-description"], [class*="job-description"]',
+    jobCards:            null,
+    jobTitle:            'h1[class*="title"], h1',
+    companyName:         '[class*="company"], [class*="organization"]',
+    filterSidebar:       null,
+    filterTagPills:      null,
+    drawerCompanyHeader: null,
+    drawerJobTitle:      null,
+    injectTarget:        '[class*="ashby-job-posting-description"], [class*="job-description"], form',
+    injectPosition:      'beforebegin',
+  },
+  icims: {
+    slug:                'icims',
+    jobDescription:      '#job-content, .iCIMS_JobContent, [class*="job-description"]',
+    jobCards:            null,
+    jobTitle:            '.iCIMS_Header h1, h1[class*="title"], h1',
+    companyName:         '.iCIMS_CompanyName, [class*="company-name"]',
+    filterSidebar:       null,
+    filterTagPills:      null,
+    drawerCompanyHeader: null,
+    drawerJobTitle:      null,
+    injectTarget:        '#job-content, .iCIMS_JobContent, form',
+    injectPosition:      'beforebegin',
+  },
+  smartrecruiters: {
+    slug:                'smartrecruiters',
+    jobDescription:      '[class*="job-description"], [itemprop="description"]',
+    jobCards:            null,
+    jobTitle:            '[itemprop="title"], h1[class*="title"], h1',
+    companyName:         '[itemprop="name"], [class*="company-name"]',
+    filterSidebar:       null,
+    filterTagPills:      null,
+    drawerCompanyHeader: null,
+    drawerJobTitle:      null,
+    injectTarget:        '[class*="job-description"], [itemprop="description"], form',
+    injectPosition:      'beforebegin',
+  },
+  bamboohr: {
+    slug:                'bamboohr',
+    jobDescription:      '.BambooHR-ATS-Jobs-Item-Description, [class*="description"]',
+    jobCards:            null,
+    jobTitle:            'h2[class*="title"], h1',
+    companyName:         '[class*="company"]',
+    filterSidebar:       null,
+    filterTagPills:      null,
+    drawerCompanyHeader: null,
+    drawerJobTitle:      null,
+    injectTarget:        '.BambooHR-ATS-Jobs-Item-Description, form',
+    injectPosition:      'beforebegin',
+  },
+  jazzhr: {
+    slug:                'jazzhr',
+    jobDescription:      '#job_description, [class*="job-description"]',
+    jobCards:            null,
+    jobTitle:            '#position-title, h1[class*="title"], h1',
+    companyName:         '#company-name, [class*="company"]',
+    filterSidebar:       null,
+    filterTagPills:      null,
+    drawerCompanyHeader: null,
+    drawerJobTitle:      null,
+    injectTarget:        '#job_description, form',
+    injectPosition:      'beforebegin',
+  },
+  rippling: {
+    slug:                'rippling',
+    jobDescription:      '[class*="job-description"], [class*="description"]',
+    jobCards:            null,
+    jobTitle:            'h1[class*="title"], h1',
+    companyName:         '[class*="company"]',
+    filterSidebar:       null,
+    filterTagPills:      null,
+    drawerCompanyHeader: null,
+    drawerJobTitle:      null,
+    injectTarget:        '[class*="job-description"], form',
+    injectPosition:      'beforebegin',
+  },
   universal: {
     slug:                'universal',
     jobDescription:      null,
@@ -188,5 +266,11 @@ var detectSite = function() {
   if (host.includes('builtin'))           return SITE_CONFIGS.builtin
   if (host.includes('wellfound.com'))     return SITE_CONFIGS.wellfound
   if (host.includes('dice.com'))          return SITE_CONFIGS.dice
+  if (host.includes('jobs.ashbyhq.com'))         return SITE_CONFIGS.ashby
+  if (host.includes('icims.com'))                return SITE_CONFIGS.icims
+  if (host.includes('smartrecruiters.com'))      return SITE_CONFIGS.smartrecruiters
+  if (host.includes('bamboohr.com'))             return SITE_CONFIGS.bamboohr
+  if (host.includes('jazz.co') || host.includes('applytojob.com')) return SITE_CONFIGS.jazzhr
+  if (host.includes('jobs.rippling.com'))        return SITE_CONFIGS.rippling
   return SITE_CONFIGS.universal
 }

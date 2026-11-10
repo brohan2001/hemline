@@ -1,12 +1,32 @@
 # JSeek Enhancer — Architecture
 
-## Overview
+## Standalone extension (public build)
+
+```
+content_script.js / dashboard.js / options.js
+        │  chrome.runtime.connect('jseek') + keep-alive pings
+        ▼
+background.js (MV3 service worker; Firefox: event page)
+  ├─ pipeline/tailor.js   tailorResume / writeCoverLetter / writeColdMessage / writeColdEmail
+  │     callLlm ──► llm.js ──► Anthropic SDK | Gemini | Groq | Cerebras   (user's keys, cascade)
+  │     compile ──► offscreen.html ──► tex-engine.js ──► SwiftLaTeX pdfTeX Worker (WASM)
+  │                                                    └─ vendor/texlive/pdftex/<fmt>/<file>
+  ├─ store.js             chrome.storage.local (keys, resume, profile, ledger) + IndexedDB (PDFs)
+  └─ chrome.downloads     <First>_<Last>_Resume_<Company>.pdf
+
+dashboard.js ──► https://brohan2001.github.io/resume-extension/jobs.json (+ details/<shard>.json)
+                   ▲ .github/workflows/feed.yml → scripts/build-feed.mjs → jobstream.js
+```
+
+`server.js` uses the same `pipeline/` modules with pdflatex and the Claude CLI or RelayFreeLLM injected, so both backends produce identical tailoring logic. The diagram below describes that local-server path. Publishing steps are in `docs/publishing.md`.
+
+## Overview (local server)
 
 ```
 ┌──────────────────────────────────────────────────────┐
 │                  Chrome Browser                       │
 │                                                       │
-│   any job page (12 mapped platforms + universal)      │
+│   any job page (18 mapped platforms + universal)      │
 │   ┌─────────────────────────────────────────────┐    │
 │   │  content_script.js                          │    │
 │   │  • Injects UI (buttons, badges, toggles)    │    │
@@ -34,11 +54,15 @@
 │  POST /cover-letter   → generates CL .tex + PDF       │
 │  POST /cold-message   → returns plain-text message    │
 │  POST /cold-email     → returns { subject, body }     │
-│  GET  /api/jobs       → live job stream (3 free APIs) │
-│  GET  /               → local web dashboard           │
+│  GET  /api/jobs       → scored stream slice (filters) │
+│  GET  /api/job/:id    → full posting for detail panel │
+│  POST /api/refresh    → trigger background re-scrape   │
+│  GET  /               → watchlist dashboard           │
 │  GET  /health         → provider + pdflatex status    │
+│  GET  /api/resume     → last-compiled swe.pdf (upload)│
 │  GET  /applications   → ledger (+ /check dup guard)   │
 │  GET  /stats          → pipeline.log aggregates       │
+│  jobstream.js → ~2,300 ATS boards, scored, USA-tech   │
 │                                                       │
 │  LLM routing:                                         │
 │    provider = req.body.provider || LLM_PROVIDER       │
@@ -46,7 +70,7 @@
 │    claude → runClaude(bin, prompt, cwd)               │
 │                                                       │
 │  After /cover-letter PDF is sent:                     │
-│    Rohan_CL_*.tex + Rohan_CL_*.pdf deleted async      │
+│    <Name>_CL_*.tex + .pdf deleted async               │
 └───────────┬───────────────────────────────────────────┘
             │ HTTP POST /v1/chat/completions
 ┌───────────▼───────────────────────────────────────────┐
@@ -77,10 +101,13 @@
 | `manifest.json` | Chrome extension manifest V3 — permissions, host rules, script declarations |
 | `content_script.js` | All DOM interaction: button/badge/toggle injection, JD scraping, fetch to server |
 | `background.js` | Service worker — handles `chrome.downloads.download()` on behalf of content script |
-| `server.js` | Express bridge — all LLM endpoints, pdflatex compilation, relay routing |
+| `server.js` | Express bridge — all LLM endpoints, pdflatex compilation, relay routing, job-stream routes |
+| `jobstream.js` | Company-board scraper + scorer — fetches/normalizes/scores the in-memory job stream (15-min background refresh) |
+| `data/companies.json` | ~2,300 companies × Greenhouse/Lever/Ashby board tokens (derived from the `myjobs` project) |
+| `data/visa_keywords.json` / `data/role_keywords.json` | Visa-signal and role-classification keyword lists (ported from `myjobs`) |
 | `package.json` | Node server dependencies and run scripts |
 | `h1b_data.json` | Static company → H1-B sponsorship count lookup, loaded by content script |
-| `site_configs.js` | Per-site DOM selector configs for 12 job boards + `universal` runtime fallback |
+| `site_configs.js` | Per-site DOM selector configs for 18 job boards + `universal` runtime fallback |
 | `public/index.html` | Local web dashboard — 2-column job stream + tailoring panel, ledger, stats |
 | `options.html` / `options.js` | Extension options page — edit the Auto-Fill profile (chrome.storage) |
 | `tests/ui_live.test.js` | Playwright E2E — loads the unpacked extension, asserts injection on live pages |
@@ -121,10 +148,10 @@ User clicks [ Resume & CL ] on a job page
   → server.js reads swe.tex + cover_letter_template.tex + skills_*.txt
   → callRelay(prompt, RELAY_CL_MODEL) — defaults to cerebras/zai-glm-4.7
   → extractLatex() + graftPreamble()
-  → writes Rohan_CL_{safe}.tex
-  → pdflatex compiles → Rohan_CL_{safe}.pdf
+  → writes <Name>_CL_{safe}.tex
+  → pdflatex compiles → <Name>_CL_{safe}.pdf
   → server reads PDF → sends application/pdf
-  → AFTER res.send(): Rohan_CL_*.tex and Rohan_CL_*.pdf deleted asynchronously
+  → AFTER res.send(): <Name>_CL_*.tex and .pdf deleted asynchronously
   → resumes/ contains only master files after completion
 ```
 
@@ -169,21 +196,49 @@ User clicks icon
   → Opens LinkedIn recruiter search tab for that company
 ```
 
-### Feature 7 — Live Job Stream Dashboard (`GET /api/jobs`)
+### Feature 7 — Company-Board Job Stream + Watchlist Dashboard (`jobstream.js`)
+
+The stream scrapes ~2,440 company ATS boards directly across 6 monitor types, scores
+every posting, filters to **last-7-days USA-only tech**, and serves a jobseek-style
+watchlist UI. Company+board config lives in `data/companies.json` (derived from the
+`myjobs` project); scoring/visa/role keyword logic is ported from `myjobs/src/ranker.py`.
+
+Monitor types & description handling:
+- `greenhouse`, `lever`, `ashby`, `recruitee` — full description in the listing
+- `smartrecruiters` — listing has an ISO country code (clean USA filter); the body is
+  fetched lazily on `GET /api/job/:id` via `loadDetail()`
+- `workday` — list carries a relative post date; recent postings are detail-fetched for
+  description + real location. **Best-effort**: Workday IP-blocks datacenter/home IPs
+  without TLS fingerprinting, so it often yields nothing (see compromises below)
 
 ```
-User opens http://localhost:4567
-  → dashboard fires GET /api/jobs
-  → server fetches in parallel (Promise.allSettled — one source down ≠ stream down):
-      Arbeitnow  https://www.arbeitnow.com/api/job-board-api
-      Remotive   https://remotive.com/api/remote-jobs?category=software-dev&limit=50
-      Jobicy     https://jobicy.com/api/v2/remote-jobs?geo=usa&industry=engineering&count=20
-  → each result normalized to { id, title, company, location, url, description, tags, remote, source }
-  → deduplicated on url → { count, jobs }
-  → left column renders job cards (keyword filter + refresh)
-User clicks a card
-  → description (HTML-stripped), company, and title populate the right tailoring panel
-  → Tailor Resume / CL / Cold Message run against the loaded job
+Server startup (isMain)
+  → initStream(): load data/{companies,visa_keywords,role_keywords}.json + h1b_data.json
+  → load data/jobs_cache.json into memory if present (warm start)
+  → refresh() in the background, then setInterval(refresh, 15min)
+
+refresh()  (jobstream.js — bounded to 20 concurrent fetches)
+  → for each company board: fetchGreenhouse|Lever|Ashby|Workday|SmartRecruiters|Recruitee
+    (+ Remotive + Jobicy as remote-only supplements)
+  → normalize(): classifyRole, detectVisa, detectLevel, parseMaxExperience,
+    scoreJob (skill 35 / role 25 / visa 20 / recency 10 / company 10, senior ×0.35)
+  → drop jobs older than 7 days (or undated), non-USA (isUsaOnly — India/foreign
+    excluded), and non-tech (role 'other' + low skill)
+  → dedupe on url, SORT STRICTLY BY postedAt DESC (newest first), keep top
+    MAX_JOBS (20000), persist to cache
+
+GET /api/jobs?role=&level=&location=&workMode=&h1bOnly=&earlyOnly=&q=&offset=&limit=
+  → queryJobs() filters the in-memory stream, returns a lightweight page
+    { total, count, offset, jobs:[…], streamTotal, lastRefreshed, refreshing }
+GET /api/job/:id   → full posting (HTML description + score breakdown) for the panel
+POST /api/refresh  → triggers a background refresh
+
+Dashboard (public/index.html — dark watchlist UI)
+  → filter chips (location/role/level/work mode) + H1-B-only + Early-career toggles
+  → job rows: company logo (clearbit), H1-B badge, title, score, time-ago, date dividers
+  → click a row → GET /api/job/:id → detail panel with visa/role/level badges,
+    score strip, and the Resume / Resume&CL / Message / Email actions
+  → Tailor actions strip the HTML description and POST to /tailor, /cover-letter, etc.
 ```
 
 ### Feature 8 — Universal Semantic Scraper (unmapped hosts)
@@ -201,16 +256,33 @@ detectSite() finds no hostname match
 Manifests carry *://*/* so the content script can run anywhere.
 ```
 
-### Feature 9 — ATS Auto-Fill (Greenhouse / Lever / Workday)
+### Feature 9 — ATS Auto-Fill (9 ATS platforms + LinkedIn Easy Apply)
+
+ATS_SLUGS: Greenhouse, Lever, Workday, Ashby, iCIMS, SmartRecruiters, BambooHR,
+JazzHR, Rippling. LinkedIn Easy Apply is handled separately (modal observer).
 
 ```
 User clicks [ Auto-Fill ] above the application form
-  → autoFillForm() matches each empty input/textarea by name/id/placeholder/
-    aria-label/data-automation-id/label against FIELD_PATTERNS
-  → setFieldValue(): native prototype value setter (bypasses React's fiber shim)
-      + InputEvent { bubbles, composed } (crosses Workday shadow DOM)
-      + change event → frameworks register the value as user input
+  → autoFillForm(root) matches each empty field by name/id/placeholder/
+    aria-label/data-automation-id/label against FIELD_PATTERNS (~27 fields)
+  → text/textarea: setFieldValue() — native prototype value setter (bypasses
+      React's fiber shim) + InputEvent { bubbles, composed } (crosses Workday
+      shadow DOM) + change event → frameworks register the value as user input
+  → <select>: setSelectValue() — fuzzy-matches profile value to an option
+  → radios: fillRadioGroup() — picks the option matching the profile value
+  → checkboxes: only auto-checks consent/terms boxes, never demographic ones
+  → file inputs: fillResumeUpload() fetches GET /api/resume (swe.pdf) and
+      injects it via DataTransfer (the only way to set input.files in JS)
+  → after a fill, highlightNextButton() outlines the multi-step Next/Continue
+      button (never auto-submits)
+  → blank fields (e.g. EEO gender/race/veteran) are skipped unless the user
+      filled them in the options page
   → profile from chrome.storage (options page) or DEFAULT_PROFILE fallback
+
+LinkedIn Easy Apply (cfg.slug === 'linkedin'):
+  → watchLinkedInEasyApply() installs a MutationObserver (guarded once per page)
+  → when the [class*="jobs-easy-apply-modal"] modal appears, debounce 400ms then
+      autoFillForm(modal) scoped to the modal, then highlight its Next button
 ```
 
 ---
@@ -271,7 +343,7 @@ After a successful request, only these files remain:
 - `cover_letter_template.tex` — CL template (never modified)
 - `skills_ds.txt`, `skills_ml.txt`, `skills_cloud.txt`, `skills_network.txt` — skill pools
 
-Generated `Rohan_CL_*.tex`, `Rohan_CL_*.pdf`, and pdflatex artifacts (`.aux`, `.log`, `.out`) are deleted asynchronously after the response is sent.
+Generated `<Name>_CL_*.tex`, `<Name>_CL_*.pdf` (name from `CANDIDATE_NAME`), and pdflatex artifacts (`.aux`, `.log`, `.out`) are deleted asynchronously after the response is sent.
 
 ### Diagnostic Logging
 

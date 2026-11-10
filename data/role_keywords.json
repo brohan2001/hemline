@@ -1,0 +1,41 @@
+{
+  "ml": [
+    "machine learning engineer", "ml engineer", "ai engineer", "research scientist",
+    "applied scientist", "nlp engineer", "computer vision engineer",
+    "deep learning", "ai researcher", "llm", "generative ai", "ml platform"
+  ],
+  "ds": [
+    "data scientist", "data analyst", "analytics engineer",
+    "bi engineer", "business intelligence", "data engineer",
+    "quantitative analyst", "quant analyst"
+  ],
+  "network": [
+    "network engineer", "network administrator", "network operations",
+    "noc engineer", "network architect", "network security", "networking engineer"
+  ],
+  "cloud": [
+    "cloud engineer", "devops engineer", "sre", "site reliability",
+    "platform engineer", "infrastructure engineer", "devsecops",
+    "cloud architect", "solutions architect", "systems engineer"
+  ],
+  "mobile": [
+    "ios engineer", "android engineer", "mobile engineer", "mobile developer",
+    "flutter engineer", "react native engineer", "ios developer", "android developer"
+  ],
+  "frontend": [
+    "frontend engineer", "front-end engineer", "frontend developer",
+    "ui engineer", "ux engineer", "react engineer", "react developer",
+    "angular engineer", "vue engineer", "web developer", "javascript engineer"
+  ],
+  "backend": [
+    "backend engineer", "back-end engineer", "backend developer",
+    "server-side engineer", "api engineer", "platform backend",
+    "distributed systems engineer", "java engineer", "python engineer",
+    "golang engineer", "ruby engineer"
+  ],
+  "fullstack": [
+    "software engineer", "software developer", "fullstack engineer",
+    "full-stack engineer", "full stack engineer", "fullstack developer",
+    "software engineering", "new grad", "early career engineer"
+  ]
+}

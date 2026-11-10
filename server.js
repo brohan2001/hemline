@@ -7,8 +7,10 @@ import { promises as fs } from 'fs'
 import { fileURLToPath } from 'url'
 import path from 'path'
 import { promisify } from 'util'
-import { sanitizeLatex } from './scripts/verify-latex.js'
-import { parseSkillRows, validateRows } from './scripts/validate-skills.js'
+import { sanitizeFilename } from './pipeline/latex.js'
+import { computeMatchScore } from './pipeline/score.js'
+import { tailorResume, writeCoverLetter, writeColdMessage, writeColdEmail } from './pipeline/tailor.js'
+import { initStream, refresh, queryJobs, getJob, streamMeta } from './jobstream.js'
 
 // BasicTeX installs pdflatex to /Library/TeX/texbin which is not in Node's
 // inherited PATH on macOS when launched outside a login shell.
@@ -40,266 +42,6 @@ if (process.env.NODE_ENV !== 'test') {
   }
 }
 
-function buildResumePrompt(jobDescription, sweTex, skills, projectPool) {
-  const skillsBlock = Object.entries(skills)
-    .map(([name, content]) => `<${name}>\n${content}\n</${name}>`)
-    .join('\n\n')
-
-  const projectInstructions = projectPool
-    ? `
-Here is the project pool (8 projects):
-<project_pool>
-${projectPool}
-</project_pool>
-
-Also update ONLY the Projects section with these strict constraints:
-- Analyze the job description and select the 3 projects from the project pool that best match its requirements.
-- Replace the contents of \\section{Projects} with exactly those 3 projects, copied VERBATIM from the pool — do not rewrite, shorten, or merge any bullet.
-- Keep the \\resumeSubHeadingListStart / \\resumeSubHeadingListEnd wrapper around the 3 projects exactly as in the current document.
-`
-    : ''
-
-  return `You are editing a LaTeX resume. Your output must be the complete, valid LaTeX source — nothing else.
-
-Here is the current resumes/swe.tex:
-<swe_tex>
-${sweTex}
-</swe_tex>
-
-Here are the skill pools:
-${skillsBlock}
-${projectInstructions}
-The target job description is:
-<job_description>
-${jobDescription.trim()}
-</job_description>
-
-Update ONLY the Technical Skills section with these strict constraints:
-- Exactly 5 skill headings total.
-- Row 1 heading must be "Languages".
-- Rows 2, 3, and 4: choose headings that best match the job description (e.g., "Frameworks", "Developer Tools", "Libraries", "Cloud \\& DevOps").
-- Row 5 heading must be "Courses". All course names must fit on a single physical line — do NOT insert a \\\\ line break within the Courses row. The total visible characters of the Courses line must be strictly between 150 and 200.
-- Pull skills from the skill pools that match keywords in the job description.
-- Add any critical missing skills explicitly required by the job description (e.g., Docker, Kubernetes) if not already present.
-- Every physical line of skills content (ignoring LaTeX markup like \\textbf{}, \\item, \\\\) must produce strictly between 60 and 105 characters of visible PDF text. If a line is too short, pack it with more relevant, matching keywords from the skill pools to maximize ATS keyword density, but do not exceed 105 characters.
-- CRITICAL: In LaTeX, the ampersand character & is a reserved alignment tab. Always write it as \\& inside \\textbf{} headings and skill content (e.g., \\textbf{Cloud \\& DevOps}, never \\textbf{Cloud & DevOps}).
-- Do not modify any section other than Technical Skills${projectPool ? ' and Projects' : ''}.
-
-Output the complete modified swe.tex to stdout. Output ONLY the raw LaTeX — no explanation, no markdown fences, no commentary.`
-}
-
-function buildClPrompt(jd, jobTitle, companyName, sweTex, clTemplate, skills) {
-  const skillsBlock = Object.entries(skills)
-    .map(([name, content]) => `<${name}>\n${content}\n</${name}>`)
-    .join('\n\n')
-
-  return `You are a technical career advisor writing a highly personalized cover letter. Your output must be a complete, valid LaTeX document — nothing else.
-
-Here is Rohan's resume (resumes/swe.tex):
-<swe_tex>
-${sweTex}
-</swe_tex>
-
-Here is the cover letter template (resumes/cover_letter_template.tex):
-<cover_letter_template>
-${clTemplate}
-</cover_letter_template>
-
-Here are the skill pools:
-${skillsBlock}
-
-The target job description is:
-<job_description>
-${jd.trim()}
-</job_description>
-
-Write a 3-paragraph cover letter body for Rohan Balasubramanian applying to the role of "${jobTitle}" at "${companyName}".
-
-Paragraph rules:
-- Paragraph 1: Open with a specific hook directly connecting Rohan's MS CS at Stony Brook and his GRA work (SadTalker lip-sync, NeMo TTS pipelines, CUDA/GPU optimization) to a concrete technical requirement stated in the job description. Be specific; name the requirement.
-- Paragraph 2: Highlight 1-2 projects from swe.tex that are most relevant to this JD (e.g., Predicare's Django + Kubernetes auto-scaling, Constrained Text Generation with Llama, Auto Vision with Flutter/TensorFlow). Cite any measurable outcomes that appear in swe.tex (percentages, latency numbers, scale figures).
-- Paragraph 3: One short forward-looking paragraph on what Rohan will bring to the team. Close with one specific sentence expressing genuine enthusiasm for this role at ${companyName}; avoid generic phrasing.
-
-STRICT PROSE STYLE AND ANTI-AI CONSTRAINTS (DO NOT VIOLATE):
-1. Tone: Write in the register of a senior professor. Be dry, authoritative, empirical, and understated. Do not use flowery adjectives such as passionate or eager.
-2. No negation framing: Do not use constructions like "Not only X, but also Y", "It is not just X, it is Y", or "This is X, not Y". State what Rohan did directly; do not define him by contrast or negation.
-3. No evaluative labeling: Do not end paragraphs with summary sentences that tag or evaluate the evidence (e.g., BANNED: "This reflects research maturity", "This is hypothesis-driven debugging", "This demonstrates leadership"). Trust the reader to draw conclusions from the evidence itself.
-4. Indirect speech only: Never use direct quotation marks to quote dialogue or internal thoughts. Use indirect speech exclusively.
-5. Banned words: Never use any of the following words or their derivatives: delve, foster, underscore, landscape, tapestry, testament, pivotal, invaluable, unwavering, commendable, meticulous, seamlessly, intersection, realm, prowess.
-6. No em dashes: Do not use em dashes anywhere in the output. Use semicolons, commas, or periods instead.
-7. Sentence rhythm: Avoid staccato chains of short Subject-Verb-Object sentences. Connect complex thoughts fluidly using subordinating conjunctions such as although, while, because, given that, and whereas.
-
-LaTeX formatting rules (strictly follow these):
-- Replace [Paragraph 1], [Paragraph 2], and [Paragraph 3] in the template with the three paragraphs above.
-- Escape ALL special characters: & becomes \\&, % becomes \\%, $ becomes \\$, # becomes \\#, _ becomes \\_
-- Do NOT use any of these banned phrases: "I am excited to apply", "I believe my skills", "I am writing to express", "I am passionate about", "leverage my experience".
-- Preserve all other template content (heading, contact line, margins, "Dear Hiring Manager", sign-off) exactly as written in the template.
-
-Output the complete final LaTeX document to stdout. Output ONLY the raw LaTeX — no explanation, no markdown fences, no commentary.`
-}
-
-function buildColdMessagePrompt(jd, companyName, jobTitle, sweTex) {
-  return `You are writing a LinkedIn connection request message for Rohan Balasubramanian.
-Output ONLY the message text — no explanation, no quotes, no preamble, no markdown.
-
-Here is Rohan's resume for context:
-<swe_tex>
-${sweTex}
-</swe_tex>
-
-Target role: "${jobTitle}" at "${companyName}".
-Job description:
-<job_description>
-${jd.trim()}
-</job_description>
-
-Write exactly 4 sentences. Count the total characters carefully — the combined character count of all 4 sentences must be strictly under 300 characters.
-
-Connect one specific technical theme from Rohan's GRA work (SadTalker lip-sync, NeMo TTS pipelines, CUDA/GPU optimization) or his projects (Predicare, Constrained Text Generation, Auto Vision) directly to a concrete challenge stated in the job description.
-
-STRICT ANTI-AI STYLE RULES (DO NOT VIOLATE):
-1. Senior professor register — dry, authoritative, empirical. No flowery adjectives.
-2. No negation framing. State what Rohan did; do not define by contrast.
-3. No evaluative labeling. Trust the reader to draw conclusions.
-4. Indirect speech only. No direct quotation marks.
-5. Banned words: delve, foster, underscore, landscape, tapestry, testament, pivotal, invaluable, unwavering, commendable, meticulous, seamlessly, intersection, realm, prowess.
-6. No em dashes.
-7. Do not start with "I".
-
-Output ONLY the message. Nothing else.`
-}
-
-function buildColdEmailPrompt(jd, companyName, jobTitle, sweTex) {
-  return `You are writing a cold recruiter email for Rohan Balasubramanian.
-Output the email as plain text: first line must be "Subject: <subject under 80 chars>", then a blank line, then the email body. Nothing else — no explanation, no markdown.
-
-Here is Rohan's resume for context:
-<swe_tex>
-${sweTex}
-</swe_tex>
-
-Target role: "${jobTitle}" at "${companyName}".
-Job description:
-<job_description>
-${jd.trim()}
-</job_description>
-
-Write a 3-paragraph email body:
-- Paragraph 1: Open with a specific hook connecting Rohan's MS CS at Stony Brook and his GRA work (SadTalker lip-sync, NeMo TTS pipelines, CUDA/GPU optimization) to a concrete requirement in the job description.
-- Paragraph 2: Highlight 1-2 of the most relevant projects from the resume, citing measurable outcomes that appear in it.
-- Paragraph 3: One short closing paragraph requesting a brief conversation about the role. Sign off with "Best regards,\nRohan Balasubramanian".
-
-STRICT ANTI-AI STYLE RULES (DO NOT VIOLATE):
-1. Senior professor register — dry, authoritative, empirical. No flowery adjectives.
-2. No negation framing. State what Rohan did; do not define by contrast.
-3. No evaluative labeling. Trust the reader to draw conclusions.
-4. Indirect speech only. No direct quotation marks.
-5. Banned words: delve, foster, underscore, landscape, tapestry, testament, pivotal, invaluable, unwavering, commendable, meticulous, seamlessly, intersection, realm, prowess.
-6. No em dashes.
-
-Output ONLY the subject line and email. Nothing else.`
-}
-
-// Validates the LLM's Technical Skills block against the prompt's hard
-// constraints (5 rows, 60-105 visible chars for rows 1-4, 150-200 for Courses).
-function validateLlmSkills(rawTex) {
-  const start = rawTex.indexOf('\\section{Technical Skills}')
-  if (start === -1) return { passed: false, violations: [{ reason: 'Technical Skills section missing' }] }
-  const end = rawTex.indexOf('\\section{', start + 1)
-  return validateRows(parseSkillRows(rawTex.slice(start, end === -1 ? rawTex.length : end)))
-}
-
-function extractSkillsSection(tex) {
-  const lines = tex.split('\n')
-  const start = lines.findIndex(l => l.includes('Technical Skills'))
-  if (start === -1) return '  (Technical Skills section not found in file)'
-  const end = lines.findIndex((l, i) => i > start && l.trimStart().startsWith('\\section{'))
-  return lines.slice(start, end === -1 ? start + 40 : end).join('\n')
-}
-
-// Strips any preamble text Claude may emit before \documentclass and after \end{document}.
-function extractLatex(output) {
-  const start = output.indexOf('\\documentclass')
-  const end = output.lastIndexOf('\\end{document}')
-  if (start === -1 || end === -1) return null
-  return output.slice(start, end + '\\end{document}'.length)
-}
-
-// Escapes any bare & in the Technical Skills section body that the LLM forgot to escape.
-function sanitizeSkillsAmpersands(tex) {
-  const start = tex.indexOf('\\section{Technical Skills}')
-  if (start === -1) return tex
-  const end = tex.indexOf('\\section{', start + 1)
-  const boundary = end === -1 ? tex.length : end
-  const skillsChunk = tex.slice(start, boundary).replace(/(?<!\\)&/g, '\\&')
-  return tex.slice(0, start) + skillsChunk + tex.slice(boundary)
-}
-
-// Used by /cover-letter: grafts the template preamble onto the LLM-generated body.
-function graftPreamble(original, llmOutput) {
-  const MARKER = '\\begin{document}'
-  const origIdx = original.indexOf(MARKER)
-  const llmIdx = llmOutput.indexOf(MARKER)
-  if (origIdx === -1 || llmIdx === -1) return llmOutput
-  return original.slice(0, origIdx + MARKER.length) + llmOutput.slice(llmIdx + MARKER.length)
-}
-
-// Used by /tailor: surgically replaces only the named \section{...} block from
-// llmOutput into the original document, leaving everything else untouched so the
-// LLM can never corrupt \resumeItemListEnd or other custom commands in the body.
-function graftSection(original, llmOutput, sectionName) {
-  const TAG = `\\section{${sectionName}}`
-  const llmStart = llmOutput.indexOf(TAG)
-  if (llmStart === -1) return original
-  const llmNext = llmOutput.indexOf('\\section{', llmStart + 1)
-  const llmBlock = llmOutput.slice(llmStart, llmNext === -1 ? llmOutput.length : llmNext)
-
-  const origStart = original.indexOf(TAG)
-  if (origStart === -1) return original
-  const origNext = original.indexOf('\\section{', origStart + 1)
-  const origEnd = origNext === -1 ? original.length : origNext
-
-  return original.slice(0, origStart) + llmBlock + original.slice(origEnd)
-}
-
-const graftSkillsSection   = (original, llmOutput) => graftSection(original, llmOutput, 'Technical Skills')
-const graftProjectsSection = (original, llmOutput) => graftSection(original, llmOutput, 'Projects')
-
-// Pulls the first "! <error>" line (and its l.<num> location) out of pdflatex
-// output so 500 responses can say what actually broke instead of "Command failed".
-function extractLatexError(stdout) {
-  const lines = (stdout ?? '').split('\n')
-  const idx = lines.findIndex(l => l.startsWith('! '))
-  if (idx === -1) return null
-  const context = lines.slice(idx, idx + 4).filter(Boolean)
-  const lineRef = context.find(l => /^l\.\d+/.test(l))
-  return {
-    message: lines[idx].slice(2),
-    line: lineRef ? parseInt(lineRef.slice(2)) : null,
-    excerpt: context.join('\n'),
-  }
-}
-
-// Reads the page count pdflatex reports, e.g. "Output written on swe.pdf (1 page, ...)".
-function parsePageCount(stdout) {
-  const m = (stdout ?? '').match(/Output written on .*? \((\d+) page/)
-  return m ? parseInt(m[1], 10) : null
-}
-
-// Tightens vertical spacing so an overflowing resume collapses back to 1 page:
-// pulls the top margin up 0.05in and extends the text height 0.1in per pass.
-function tightenVerticalSpacing(tex) {
-  return tex
-    .replace(/\\addtolength\{\\topmargin\}\{(-?[\d.]+)in\}/, (_, v) =>
-      `\\addtolength{\\topmargin}{${(parseFloat(v) - 0.05).toFixed(2)}in}`)
-    .replace(/\\addtolength\{\\textheight\}\{(-?[\d.]+)in\}/, (_, v) =>
-      `\\addtolength{\\textheight}{${(parseFloat(v) + 0.1).toFixed(2)}in}`)
-}
-
-function sanitizeFilename(name) {
-  return (name ?? '').replace(/[^a-zA-Z0-9\-]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '') || 'Company'
-}
-
 async function cleanupPdflatex(basePath) {
   for (const ext of ['.aux', '.log', '.out']) {
     await fs.unlink(basePath + ext).catch(() => {})
@@ -322,89 +64,6 @@ const RELAY_LOG = path.join(LOGS_DIR, 'relay.log')
 async function logPipeline(data) {
   await fs.mkdir(LOGS_DIR, { recursive: true })
   await fs.appendFile(PIPELINE_LOG, JSON.stringify({ ts: new Date().toISOString(), ...data }) + '\n', 'utf8')
-}
-
-// Trims text to maxLen chars without cutting a word mid-token.
-function trimToWord(text, maxLen) {
-  if (text.length <= maxLen) return text
-  const cut = text.lastIndexOf(' ', maxLen)
-  return cut > 0 ? text.slice(0, cut) : text.slice(0, maxLen)
-}
-
-function trimToItem(text, maxLen) {
-  if (text.length <= maxLen) return text
-  const cut = text.lastIndexOf(',', maxLen)
-  return cut > 0 ? text.slice(0, cut) : text.slice(0, maxLen)
-}
-
-// Estimates the visible PDF character count of a LaTeX skills line.
-function visibleLength(latexLine) {
-  return latexLine
-    .replace(/\\textbf\{([^}]*)\}/g, '$1')
-    .replace(/\\item\s*/g, '')
-    .replace(/\\\\$/, '')
-    .replace(/\\&/g, '&')
-    .replace(/\\[a-zA-Z]+\{[^}]*\}/g, '')
-    .replace(/\\[a-zA-Z]+/g, '')
-    .length
-}
-
-// Clamps skill rows 2–4 to ≤105 visible chars to prevent PDF margin overflow.
-function applySkillsLineTrimmer(tex, maxVisible = 105) {
-  const start = tex.indexOf('\\section{Technical Skills}')
-  if (start === -1) return tex
-  const end = tex.indexOf('\\section{', start + 1)
-  const boundary = end === -1 ? tex.length : end
-  const lines = tex.slice(start, boundary).split('\n')
-  let contentRow = 0
-  const trimmed = lines.map(line => {
-    if (!line.includes('\\textbf{')) return line
-    contentRow++
-    if (contentRow < 2) return line
-    const limit = contentRow <= 4 ? maxVisible : 200
-    if (visibleLength(line) <= limit) return line
-    const originalLine = line
-    const m = line.match(/^(.*?\\textbf\{[^}]+\}\{)(.*?)(\}\s*(?:\\\\)?)\s*$/)
-    let result
-    if (!m) {
-      result = trimToItem(line, line.length - (visibleLength(line) - limit))
-    } else {
-      const trimmedBody = trimToItem(m[2], limit - visibleLength(m[1])).replace(/,\s*$/, '')
-      result = m[1] + trimmedBody + m[3]
-    }
-    console.log(`[Trimmer] Line Trimmed! Original: "${originalLine}" -> Trimmed: "${result}"`)
-    return result
-  })
-  return tex.slice(0, start) + trimmed.join('\n') + tex.slice(boundary)
-}
-
-const STOPWORDS = new Set([
-  'the', 'and', 'for', 'with', 'you', 'your', 'our', 'are', 'will', 'this', 'that', 'have', 'has',
-  'from', 'who', 'what', 'when', 'where', 'how', 'all', 'can', 'not', 'but', 'their', 'they',
-  'work', 'working', 'team', 'teams', 'role', 'job', 'years', 'year', 'experience', 'experienced',
-  'skills', 'skill', 'ability', 'strong', 'plus', 'must', 'required', 'requirements', 'preferred',
-  'qualifications', 'responsibilities', 'about', 'more', 'other', 'such', 'including', 'across',
-  'within', 'using', 'use', 'used', 'new', 'help', 'build', 'building', 'develop', 'developing',
-  'development', 'engineer', 'engineering', 'engineers', 'software', 'looking', 'join', 'company',
-  'candidates', 'candidate', 'position', 'opportunity', 'benefits', 'salary', 'location', 'remote',
-  'employment', 'equal', 'status', 'per', 'etc', 'related', 'degree', 'bachelor', 'master',
-])
-
-// Scores how many of the JD's top keywords appear in the final tailored tex.
-function computeMatchScore(jd, tex) {
-  const freq = {}
-  for (const w of jd.toLowerCase().match(/[a-z][a-z+#.]{2,}/g) ?? []) {
-    if (!STOPWORDS.has(w)) freq[w] = (freq[w] ?? 0) + 1
-  }
-  const keywords = Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 30).map(([w]) => w)
-  if (keywords.length === 0) return { score: 0, matched: [], missing: [] }
-  const haystack = tex.toLowerCase()
-  const matched = keywords.filter(k => haystack.includes(k))
-  return {
-    score: Math.round((matched.length / keywords.length) * 100),
-    matched,
-    missing: keywords.filter(k => !matched.includes(k)),
-  }
 }
 
 async function readSkillFiles() {
@@ -559,6 +218,30 @@ app.get('/health', async (_req, res) => res.json({
   relayUp: await checkPort(8000),
 }))
 
+// Serves the last-compiled master resume so the extension can attach it to
+// application forms. 404 until /tailor has produced swe.pdf at least once.
+app.get('/api/resume', async (_req, res) => {
+  try {
+    const pdf = await fs.readFile(path.join(RESUMES_DIR, 'swe.pdf'))
+    res.setHeader('Content-Type', 'application/pdf')
+    res.setHeader('Content-Disposition', 'attachment; filename="swe.pdf"')
+    res.send(pdf)
+  } catch {
+    res.status(404).json({ error: 'Resume PDF not found. Run /tailor first.' })
+  }
+})
+
+app.get('/api/cover-letter', async (_req, res) => {
+  try {
+    const pdf = await fs.readFile(path.join(RESUMES_DIR, 'cover_letter.pdf'))
+    res.setHeader('Content-Type', 'application/pdf')
+    res.setHeader('Content-Disposition', 'attachment; filename="cover_letter.pdf"')
+    res.send(pdf)
+  } catch {
+    res.status(404).json({ error: 'Cover letter PDF not found. Run /cover-letter first.' })
+  }
+})
+
 app.get('/stats', async (_req, res) => {
   let raw = ''
   try { raw = await fs.readFile(PIPELINE_LOG, 'utf8') } catch { /* no log yet */ }
@@ -597,73 +280,50 @@ app.get('/stats', async (_req, res) => {
   res.json({ requests, models, byDay })
 })
 
-function normalizeArbeitnow(job) {
-  return {
-    id: `arbeitnow-${job.slug}`,
-    title: job.title ?? '',
-    company: job.company_name ?? '',
-    location: job.location ?? '',
-    url: job.url ?? '',
-    description: job.description ?? '',
-    tags: job.tags ?? [],
-    remote: job.remote ?? false,
-    source: 'arbeitnow'
-  }
-}
+// Paginated, filtered slice of the in-memory job stream (USA tech, scored/sorted).
+app.get('/api/jobs', (req, res) => {
+  const { role, level, location, workMode, q } = req.query
+  const result = queryJobs({
+    role, level, location, workMode, q,
+    h1bOnly: req.query.h1bOnly === '1' || req.query.h1bOnly === 'true',
+    earlyOnly: req.query.earlyOnly === '1' || req.query.earlyOnly === 'true',
+    offset: Math.max(0, parseInt(req.query.offset, 10) || 0),
+    limit: Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 100)),
+  })
+  res.json({ ...result, ...streamMeta() })
+})
 
-function normalizeRemotive(job) {
-  return {
-    id: `remotive-${job.id}`,
-    title: job.title ?? '',
-    company: job.company_name ?? '',
-    location: job.candidate_required_location ?? '',
-    url: job.url ?? '',
-    description: job.description ?? '',
-    tags: job.tags ?? [],
-    remote: true,
-    source: 'remotive'
-  }
-}
+// Full single job (with description + score breakdown) for the detail panel.
+app.get('/api/job/:id', async (req, res) => {
+  const job = await getJob(req.params.id)
+  if (!job) return res.status(404).json({ error: 'job not found' })
+  res.json(job)
+})
 
-function normalizeJobicy(job) {
-  return {
-    id: `jobicy-${job.id}`,
-    title: job.jobTitle ?? '',
-    company: job.companyName ?? '',
-    location: job.jobGeo ?? '',
-    url: job.url ?? '',
-    description: job.jobDescription ?? '',
-    tags: Array.isArray(job.jobIndustry) ? job.jobIndustry : (job.jobIndustry ? [job.jobIndustry] : []),
-    remote: true,
-    source: 'jobicy'
-  }
-}
-
-app.get('/api/jobs', async (_req, res) => {
-  const results = await Promise.allSettled([
-    fetch('https://www.arbeitnow.com/api/job-board-api')
-      .then(r => r.json()).then(d => (d.data ?? []).map(normalizeArbeitnow)),
-    fetch('https://remotive.com/api/remote-jobs?category=software-dev&limit=50')
-      .then(r => r.json()).then(d => (d.jobs ?? []).map(normalizeRemotive)),
-    fetch('https://jobicy.com/api/v2/remote-jobs?geo=usa&industry=engineering&count=20')
-      .then(r => r.json()).then(d => (d.jobs ?? []).map(normalizeJobicy))
-  ])
-  const seen = new Set()
-  const jobs = []
-  for (const r of results) {
-    if (r.status !== 'fulfilled') continue
-    for (const job of r.value) {
-      if (!job.url || seen.has(job.url)) continue
-      seen.add(job.url)
-      jobs.push(job)
-    }
-  }
-  res.json({ count: jobs.length, jobs })
+// Manual refresh trigger (dashboard "Refresh Now"). Runs in the background.
+app.post('/api/refresh', (_req, res) => {
+  refresh()
+  res.json({ started: true, ...streamMeta() })
 })
 
 app.get('/applications', async (_req, res) => {
   const applications = await readLedger()
   res.json({ count: applications.length, applications })
+})
+
+app.post('/applications/log', async (req, res) => {
+  const { company = '', title = '', status = 'submitted', applyUrl = '' } = req.body
+  if (!company && !title) return res.status(400).json({ error: 'company or title is required' })
+  await appendLedger({
+    company,
+    title,
+    date:       new Date().toISOString().slice(0, 10),
+    status,
+    applyUrl,
+    resumePath: null,
+    clPath:     null,
+  })
+  res.json({ ok: true })
 })
 
 app.get('/applications/check', async (req, res) => {
@@ -684,148 +344,85 @@ app.get('/applications/check', async (req, res) => {
   res.json({ duplicate: true, lastDate: latest.date, lastTitle: latest.title, timesApplied: matches.length })
 })
 
+const CANDIDATE = {
+  name: process.env.CANDIDATE_NAME ?? '',
+  highlights: process.env.CANDIDATE_HIGHLIGHTS ?? '',
+}
+
+function filePrefix() {
+  return sanitizeFilename(CANDIDATE.name) === 'Company' ? 'Resume' : sanitizeFilename(CANDIDATE.name)
+}
+
+function llmFor(provider, relayModel) {
+  return async (prompt) => provider === 'relay'
+    ? (await callRelay(prompt, relayModel)).stdout
+    : (await runClaude(claudePath, prompt, __dirname)).stdout
+}
+
+function resolveProvider(req) {
+  return req.body.provider || process.env.LLM_PROVIDER || 'claude'
+}
+
+// Compiles inside a sandbox dir so the master templates are never mutated.
+function pdflatexCompiler(dir, base) {
+  const texPath = path.join(dir, `${base}.tex`)
+  return async (tex) => {
+    await fs.writeFile(texPath, tex, 'utf8')
+    try {
+      const { stdout } = await execFileAsync('pdflatex', ['-interaction=nonstopmode', `-output-directory=${dir}`, texPath], { cwd: __dirname, timeout: 60_000 })
+      return { pdf: await fs.readFile(path.join(dir, `${base}.pdf`)), log: stdout }
+    } catch (err) {
+      console.error(`pdflatex FAILED (${base}). stdout:\n` + (err.stdout || '(empty)'))
+      throw err
+    }
+  }
+}
+
+function pipelineLogger(extra) {
+  return (data) => logPipeline({ ...extra, ...data }).catch(() => {})
+}
+
 app.post('/tailor', async (req, res) => {
   const { jobDescription, companyName = '', jobTitle = '' } = req.body
   if (!jobDescription || typeof jobDescription !== 'string' || jobDescription.trim().length === 0) {
     return res.status(400).json({ error: 'jobDescription is required' })
   }
-
   const safe = sanitizeFilename(companyName)
-  const texFile = path.join(RESUMES_DIR, 'swe.tex')
-  const pdfFile = path.join(RESUMES_DIR, 'swe.pdf')
-  // All compile artifacts live in resumes/build/ so the master swe.tex is
-  // never mutated and page-guard tightening can't accumulate across requests.
-  const buildTex = path.join(BUILD_DIR, 'swe.tex')
-  const buildPdf = path.join(BUILD_DIR, 'swe.pdf')
+  const provider = resolveProvider(req)
+  const log = pipelineLogger({ company: companyName, provider })
 
   try {
     await withPipelineLock(async () => {
-    const t0 = performance.now()
-    console.log(`[/tailor] Company: ${companyName || '(none)'} | JD: ${jobDescription.length} chars`)
+      const t0 = performance.now()
+      await fs.mkdir(BUILD_DIR, { recursive: true })
+      const [sweTex, skills, projectPool] = await Promise.all([
+        fs.readFile(path.join(RESUMES_DIR, 'swe.tex'), 'utf8'),
+        readSkillFiles(),
+        readProjectPool(),
+      ])
+      const { pdf, match } = await tailorResume({
+        jd: jobDescription, sweTex, skills, projectPool, log,
+        callLlm: llmFor(provider, process.env.RELAY_MODEL || 'google/gemini-3.5-flash'),
+        compile: pdflatexCompiler(BUILD_DIR, 'swe'),
+      })
+      await fs.copyFile(path.join(BUILD_DIR, 'swe.pdf'), path.join(RESUMES_DIR, 'swe.pdf')).catch(() => {})
+      res.setHeader('Content-Type', 'application/pdf')
+      res.setHeader('Content-Disposition', `attachment; filename="${filePrefix()}_Resume_${safe}.pdf"`)
+      res.setHeader('X-JSeek-Match-Score', String(match.score))
+      res.send(pdf)
 
-    await fs.mkdir(BUILD_DIR, { recursive: true })
-    const [sweTex, skills, projectPool] = await Promise.all([
-      fs.readFile(texFile, 'utf8'),
-      readSkillFiles(),
-      readProjectPool(),
-    ])
-
-    const provider = req.body.provider || process.env.LLM_PROVIDER || 'claude'
-    const resumePrompt = buildResumePrompt(jobDescription, sweTex, skills, projectPool)
-    logPipeline({ event: 'tailor_request', company: companyName, provider, promptLen: resumePrompt.length, prompt: resumePrompt }).catch(() => {})
-
-    const callLlm = (prompt) => provider === 'relay'
-      ? callRelay(prompt, process.env.RELAY_MODEL || 'google/gemini-3.5-flash')
-      : runClaude(claudePath, prompt, __dirname)
-
-    const t1 = performance.now()
-    let claudeResult
-    try {
-      claudeResult = await callLlm(resumePrompt)
-    } catch (claudeErr) {
-      logPipeline({ event: 'tailor_llm_error', error: claudeErr.message }).catch(() => {})
-      throw claudeErr
-    }
-
-    let rawTex = extractLatex(claudeResult.stdout)
-    if (!rawTex) throw new Error(`LLM output did not contain valid LaTeX (stdout preview: ${claudeResult.stdout.slice(0, 300)})`)
-
-    let validation = validateLlmSkills(rawTex)
-    logPipeline({ event: 'tailor_validation', attempt: 1, passed: validation.passed, violations: validation.violations }).catch(() => {})
-    if (!validation.passed) {
-      console.log(`[Validator] Retry triggered: ${validation.violations.length} violations`)
-      const feedback = validation.violations
-        .map(v => v.reason ?? `Row ${v.rowIndex} ("${v.heading}") line ${v.lineIndex} was ${v.length} visible chars; allowed range is ${v.isCourses ? '150-200' : '60-105'}.`)
-        .join('\n')
-      const retryPrompt = `${resumePrompt}\n\nYOUR PREVIOUS ATTEMPT FAILED VALIDATION:\n${feedback}\nRegenerate the COMPLETE document fixing only these violations.`
-      try {
-        const retryResult = await callLlm(retryPrompt)
-        const retryTex = extractLatex(retryResult.stdout)
-        if (retryTex) {
-          const retryValidation = validateLlmSkills(retryTex)
-          logPipeline({ event: 'tailor_validation', attempt: 2, passed: retryValidation.passed, violations: retryValidation.violations }).catch(() => {})
-          // Keep whichever attempt is cleaner; the trimmer handles any residue.
-          if (retryValidation.passed || retryValidation.violations.length < validation.violations.length) {
-            rawTex = retryTex
-            claudeResult = retryResult
-            validation = retryValidation
-          }
-        }
-      } catch (retryErr) {
-        console.log(`[Validator] Retry failed (${retryErr.message}); using first attempt`)
-      }
-    }
-    const t2 = performance.now()
-    const grafted = graftProjectsSection(graftSkillsSection(sweTex, rawTex), rawTex)
-    const { tex: sanitizedTex, fixes } = sanitizeLatex(applySkillsLineTrimmer(sanitizeSkillsAmpersands(grafted)))
-    if (fixes > 0) console.log(`[Sanitizer] Escaped ${fixes} bare special characters before compile`)
-    let newTex = sanitizedTex
-    logPipeline({ event: 'tailor_llm_output', company: companyName, outputLen: newTex.length, rawOutput: claudeResult.stdout }).catch(() => {})
-
-    const skillsStart = newTex.indexOf('\\section{Technical Skills}')
-    const skillsEnd   = newTex.indexOf('\\section{', skillsStart + 1)
-    const skillsBlock = skillsStart !== -1
-      ? newTex.slice(skillsStart, skillsEnd === -1 ? undefined : skillsEnd).trim()
-      : '(not found)'
-    logPipeline({ event: 'tailor_skills_block', company: companyName, skillsBlock }).catch(() => {})
-    console.log(`[Stage 4] LLM generated Technical Skills only (${skillsBlock.split('\n').length} lines). Compiling PDF…`)
-
-    await fs.writeFile(buildTex, newTex, 'utf8')
-
-    const pdflatexArgs = ['-interaction=nonstopmode', `-output-directory=${BUILD_DIR}`, buildTex]
-    let latexResult
-    try {
-      latexResult = await execFileAsync('pdflatex', pdflatexArgs, { cwd: __dirname, timeout: 60_000 })
-    } catch (pdfErr) {
-      pdfErr.latexError = extractLatexError(pdfErr.stdout)
-      console.error('pdflatex FAILED (tailor). stdout:\n' + (pdfErr.stdout || '(empty)'))
-      console.error('pdflatex stderr:\n' + (pdfErr.stderr || '(empty)'))
-      throw pdfErr
-    }
-
-    let pageCount = parsePageCount(latexResult.stdout)
-    for (let attempt = 1; pageCount > 1 && attempt <= 5; attempt++) {
-      console.log(`[PageGuard] Page count: ${pageCount}, attempt ${attempt}/5 — tightening vertical spacing`)
-      newTex = tightenVerticalSpacing(newTex)
-      await fs.writeFile(buildTex, newTex, 'utf8')
-      try {
-        latexResult = await execFileAsync('pdflatex', pdflatexArgs, { cwd: __dirname, timeout: 60_000 })
-      } catch (pdfErr) {
-        pdfErr.latexError = extractLatexError(pdfErr.stdout)
-        console.error('pdflatex FAILED (page guard). stdout:\n' + (pdfErr.stdout || '(empty)'))
-        throw pdfErr
-      }
-      pageCount = parsePageCount(latexResult.stdout)
-    }
-    if (pageCount > 1) console.warn(`[PageGuard] Still ${pageCount} pages after 5 attempts; shipping as-is`)
-    const t3 = performance.now()
-
-    const pdfBuffer = await fs.readFile(buildPdf)
-    await fs.copyFile(buildPdf, pdfFile).catch(() => {})
-    const match = computeMatchScore(jobDescription, newTex)
-    console.log(`[Match] ${match.score}% keyword coverage (missing: ${match.missing.slice(0, 5).join(', ') || 'none'})`)
-    logPipeline({ event: 'tailor_match_score', company: companyName, ...match }).catch(() => {})
-    res.setHeader('Content-Type', 'application/pdf')
-    res.setHeader('Content-Disposition', `attachment; filename="Rohan_Resume_${safe}.pdf"`)
-    res.setHeader('X-JSeek-Match-Score', String(match.score))
-    res.send(pdfBuffer)
-    const t4 = performance.now()
-
-    console.log(`[/tailor] Done: LLM ${((t2 - t1) / 1000).toFixed(1)}s | pdflatex ${((t3 - t2) / 1000).toFixed(1)}s | total ${((t4 - t0) / 1000).toFixed(1)}s | provider: ${provider}`)
-    logPipeline({ event: 'request_complete', endpoint: '/tailor', company: companyName, provider, llmMs: Math.round(t2 - t1), pdfMs: Math.round(t3 - t2), totalMs: Math.round(t4 - t0) }).catch(() => {})
-
-    cleanupPdflatex(path.join(BUILD_DIR, 'swe')).catch(() => {})
-    appendLedger({
-      company:    companyName,
-      title:      jobTitle,
-      date:       new Date().toISOString().slice(0, 10),
-      resumePath: `resumes/Rohan_Resume_${safe}.pdf`,
-      clPath:     null,
-    }).catch(err => console.error('appendLedger /tailor error:', err.message))
+      const totalMs = Math.round(performance.now() - t0)
+      console.log(`[/tailor] Done in ${(totalMs / 1000).toFixed(1)}s | match ${match.score}% | provider: ${provider}`)
+      log({ event: 'request_complete', endpoint: '/tailor', totalMs })
+      cleanupPdflatex(path.join(BUILD_DIR, 'swe')).catch(() => {})
+      appendLedger({
+        company: companyName, title: jobTitle, date: new Date().toISOString().slice(0, 10),
+        resumePath: `resumes/${filePrefix()}_Resume_${safe}.pdf`, clPath: null,
+      }).catch(err => console.error('appendLedger /tailor error:', err.message))
     })
   } catch (err) {
     console.error('/tailor error:', err.message)
-    logPipeline({ event: 'request_error', endpoint: '/tailor', error: err.message }).catch(() => {})
+    log({ event: 'request_error', endpoint: '/tailor', error: err.message })
     res.status(500).json({ error: err.message, latexError: err.latexError ?? null })
   }
 })
@@ -835,79 +432,45 @@ app.post('/cover-letter', async (req, res) => {
   if (!jd || typeof jd !== 'string' || jd.trim().length === 0) {
     return res.status(400).json({ error: 'jd is required' })
   }
-
   const safe = sanitizeFilename(companyName)
-  const outTex = path.join(RESUMES_DIR, `Rohan_CL_${safe}.tex`)
-  const outPdf = path.join(RESUMES_DIR, `Rohan_CL_${safe}.pdf`)
+  const base = `${filePrefix()}_CL_${safe}`
+  const provider = resolveProvider(req)
+  const log = pipelineLogger({ company: companyName, provider })
 
   try {
     await withPipelineLock(async () => {
-    const t0 = performance.now()
-    console.log(`[/cover-letter] Company: ${companyName || '(none)'} | JD: ${jd.length} chars`)
+      const t0 = performance.now()
+      const [sweTex, clTemplate, skills] = await Promise.all([
+        fs.readFile(path.join(RESUMES_DIR, 'swe.tex'), 'utf8'),
+        fs.readFile(path.join(RESUMES_DIR, 'cover_letter_template.tex'), 'utf8'),
+        readSkillFiles(),
+      ])
+      const { pdf } = await writeCoverLetter({
+        jd, jobTitle, companyName, sweTex, clTemplate, skills, candidate: CANDIDATE, log,
+        callLlm: llmFor(provider, process.env.RELAY_CL_MODEL || 'cerebras/zai-glm-4.7'),
+        compile: pdflatexCompiler(RESUMES_DIR, base),
+      })
+      res.setHeader('Content-Type', 'application/pdf')
+      res.setHeader('Content-Disposition', `attachment; filename="${base}.pdf"`)
+      res.send(pdf)
 
-    const [sweTex, clTemplate, skills] = await Promise.all([
-      fs.readFile(path.join(RESUMES_DIR, 'swe.tex'), 'utf8'),
-      fs.readFile(path.join(RESUMES_DIR, 'cover_letter_template.tex'), 'utf8'),
-      readSkillFiles(),
-    ])
-
-    const clProvider = req.body.provider || process.env.LLM_PROVIDER || 'claude'
-    const clPrompt = buildClPrompt(jd, jobTitle, companyName, sweTex, clTemplate, skills)
-    logPipeline({ event: 'cl_request', company: companyName, provider: clProvider, promptLen: clPrompt.length, prompt: clPrompt }).catch(() => {})
-
-    const t1 = performance.now()
-    let clResult
-    try {
-      clResult = clProvider === 'relay'
-        ? await callRelay(clPrompt, process.env.RELAY_CL_MODEL || 'cerebras/zai-glm-4.7')
-        : await runClaude(claudePath, clPrompt, __dirname)
-    } catch (claudeErr) {
-      logPipeline({ event: 'cl_llm_error', error: claudeErr.message }).catch(() => {})
-      throw claudeErr
-    }
-    const t2 = performance.now()
-
-    const rawTex = extractLatex(clResult.stdout)
-    if (!rawTex) throw new Error(`LLM output did not contain valid LaTeX (stdout preview: ${clResult.stdout.slice(0, 300)})`)
-    const newTex = graftPreamble(clTemplate, rawTex)
-    logPipeline({ event: 'cl_llm_output', company: companyName, outputLen: newTex.length, rawOutput: clResult.stdout }).catch(() => {})
-
-    await fs.writeFile(outTex, newTex, 'utf8')
-    const pdflatexArgs = ['-interaction=nonstopmode', `-output-directory=${RESUMES_DIR}`, outTex]
-    try {
-      await execFileAsync('pdflatex', pdflatexArgs, { cwd: __dirname, timeout: 60_000 })
-    } catch (pdfErr) {
-      pdfErr.latexError = extractLatexError(pdfErr.stdout)
-      console.error('pdflatex FAILED (cover-letter). stdout:\n' + (pdfErr.stdout || '(empty)'))
-      console.error('pdflatex stderr:\n' + (pdfErr.stderr || '(empty)'))
-      console.error(`Failing .tex preserved at: ${outTex}`)
-      throw pdfErr
-    }
-    const t3 = performance.now()
-
-    const pdfBuffer = await fs.readFile(outPdf)
-    res.setHeader('Content-Type', 'application/pdf')
-    res.setHeader('Content-Disposition', `attachment; filename="Rohan_CL_${safe}.pdf"`)
-    res.send(pdfBuffer)
-    const t4 = performance.now()
-
-    console.log(`[/cover-letter] Done: LLM ${((t2 - t1) / 1000).toFixed(1)}s | pdflatex ${((t3 - t2) / 1000).toFixed(1)}s | total ${((t4 - t0) / 1000).toFixed(1)}s | provider: ${clProvider}`)
-    logPipeline({ event: 'request_complete', endpoint: '/cover-letter', company: companyName, provider: clProvider, llmMs: Math.round(t2 - t1), pdfMs: Math.round(t3 - t2), totalMs: Math.round(t4 - t0) }).catch(() => {})
-
-    fs.unlink(outTex).catch(() => {})
-    fs.unlink(outPdf).catch(() => {})
-    cleanupPdflatex(path.join(RESUMES_DIR, `Rohan_CL_${safe}`)).catch(() => {})
-    appendLedger({
-      company:    companyName,
-      title:      jobTitle,
-      date:       new Date().toISOString().slice(0, 10),
-      resumePath: null,
-      clPath:     `resumes/Rohan_CL_${safe}.pdf`,
-    }).catch(err => console.error('appendLedger /cover-letter error:', err.message))
+      const totalMs = Math.round(performance.now() - t0)
+      console.log(`[/cover-letter] Done in ${(totalMs / 1000).toFixed(1)}s | provider: ${provider}`)
+      log({ event: 'request_complete', endpoint: '/cover-letter', totalMs })
+      // Keep the last cover letter at a stable path so /api/cover-letter can serve
+      // it for batch-apply uploads (the per-company files are deleted right below).
+      await fs.copyFile(path.join(RESUMES_DIR, `${base}.pdf`), path.join(RESUMES_DIR, 'cover_letter.pdf')).catch(() => {})
+      fs.unlink(path.join(RESUMES_DIR, `${base}.tex`)).catch(() => {})
+      fs.unlink(path.join(RESUMES_DIR, `${base}.pdf`)).catch(() => {})
+      cleanupPdflatex(path.join(RESUMES_DIR, base)).catch(() => {})
+      appendLedger({
+        company: companyName, title: jobTitle, date: new Date().toISOString().slice(0, 10),
+        resumePath: null, clPath: `resumes/${base}.pdf`,
+      }).catch(err => console.error('appendLedger /cover-letter error:', err.message))
     })
   } catch (err) {
     console.error('/cover-letter error:', err.message)
-    logPipeline({ event: 'request_error', endpoint: '/cover-letter', error: err.message }).catch(() => {})
+    log({ event: 'request_error', endpoint: '/cover-letter', error: err.message })
     res.status(500).json({ error: err.message, latexError: err.latexError ?? null })
   }
 })
@@ -919,12 +482,11 @@ app.post('/cold-message', async (req, res) => {
   }
   try {
     const sweTex = await fs.readFile(path.join(RESUMES_DIR, 'swe.tex'), 'utf8')
-    const cmPrompt = buildColdMessagePrompt(jd, companyName, jobTitle, sweTex)
-    const cmProvider = req.body.provider || process.env.LLM_PROVIDER || 'claude'
-    const { stdout } = cmProvider === 'relay'
-      ? await callRelay(cmPrompt, process.env.RELAY_MODEL || 'google/gemini-3.5-flash')
-      : await runClaude(claudePath, cmPrompt, __dirname)
-    res.json({ message: stdout.trim() })
+    const message = await writeColdMessage({
+      jd, companyName, jobTitle, sweTex, candidate: CANDIDATE,
+      callLlm: llmFor(resolveProvider(req), process.env.RELAY_MODEL || 'google/gemini-3.5-flash'),
+    })
+    res.json({ message })
   } catch (err) {
     console.error('/cold-message error:', err.message)
     res.status(500).json({ error: err.message })
@@ -936,20 +498,15 @@ app.post('/cold-email', async (req, res) => {
   if (!jd || typeof jd !== 'string' || jd.trim().length === 0) {
     return res.status(400).json({ error: 'jd is required' })
   }
+  const provider = resolveProvider(req)
   try {
     const sweTex = await fs.readFile(path.join(RESUMES_DIR, 'swe.tex'), 'utf8')
-    const cePrompt = buildColdEmailPrompt(jd, companyName, jobTitle, sweTex)
-    const ceProvider = req.body.provider || process.env.LLM_PROVIDER || 'claude'
-    logPipeline({ event: 'cold_email_request', company: companyName, provider: ceProvider, prompt: cePrompt }).catch(() => {})
-    const { stdout } = ceProvider === 'relay'
-      ? await callRelay(cePrompt, process.env.RELAY_MODEL || 'google/gemini-3.5-flash')
-      : await runClaude(claudePath, cePrompt, __dirname)
-    const text = stdout.trim()
-    const subjectMatch = text.match(/^Subject:\s*(.+)/)
-    const subject = subjectMatch ? subjectMatch[1].trim() : `Application for ${jobTitle} at ${companyName}`.trim()
-    const body = subjectMatch ? text.slice(subjectMatch[0].length).trim() : text
-    logPipeline({ event: 'cold_email_output', company: companyName, rawOutput: stdout }).catch(() => {})
-    res.json({ subject, body })
+    const email = await writeColdEmail({
+      jd, companyName, jobTitle, sweTex, candidate: CANDIDATE,
+      log: pipelineLogger({ company: companyName, provider }),
+      callLlm: llmFor(provider, process.env.RELAY_MODEL || 'google/gemini-3.5-flash'),
+    })
+    res.json(email)
   } catch (err) {
     console.error('/cold-email error:', err.message)
     res.status(500).json({ error: err.message })
@@ -962,6 +519,7 @@ const isMain = process.argv[1] === fileURLToPath(import.meta.url)
 if (isMain) {
   ;(async () => {
     await maybeSpawnRelay()
+    initStream()
     app.listen(PORT, '127.0.0.1', () => {
       console.log(`JSeek Enhancer server running on http://127.0.0.1:${PORT}`)
       console.log(`Claude CLI: ${claudePath}`)

@@ -1,0 +1,45 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>JSeek TeX format builder</title>
+<button id="fmt">Build format</button>
+<button id="compile">Compile templates</button>
+<pre id="out"></pre>
+<script>
+const out = document.getElementById('out')
+const say = s => { out.textContent += s + '\n' }
+function engine() {
+  const w = new Worker('swiftlatexpdftex.js')
+  const next = pred => new Promise(r => { w.onmessage = ev => { if (pred(ev.data)) r(ev.data) } })
+  const ready = next(d => d.result && !d.cmd).then(() => w.postMessage({ cmd: 'settexliveurl', url: location.origin + '/texlive/' }))
+  return { w, next, ready }
+}
+const sample = t => t.replaceAll('{{NAME}}', 'Jane Doe').replace('{{CONTACT_LINE}}', 'jane@example.com')
+  .replace('[Paragraph 1]', 'One.').replace('[Paragraph 2]', 'Two.').replace('[Paragraph 3]', 'Three.')
+document.getElementById('fmt').onclick = async () => {
+  const { w, next, ready } = engine()
+  await ready
+  const done = next(d => d.cmd === 'compile')
+  w.postMessage({ cmd: 'compileformat' })
+  const d = await done
+  if (d.result !== 'ok') return say('Format build failed:\n' + d.log.slice(-2000))
+  await fetch('/savefmt', { method: 'POST', body: d.pdf })
+  say(`Format saved (${d.pdf.byteLength} bytes)`)
+  w.terminate()
+}
+document.getElementById('compile').onclick = async () => {
+  await fetch('/resetlog', { method: 'POST' })
+  for (const f of ['resume_template.tex', 'cover_letter_template.tex']) {
+    const { w, next, ready } = engine()
+    await ready
+    w.postMessage({ cmd: 'writefile', url: 'main.tex', src: sample(await (await fetch(f)).text()) })
+    await next(d => d.cmd === 'writefile')
+    w.postMessage({ cmd: 'setmainfile', url: 'main.tex' })
+    const done = next(d => d.cmd === 'compile')
+    w.postMessage({ cmd: 'compilelatex' })
+    const d = await done
+    say(`${f}: ${d.result} (status ${d.status})`)
+    w.terminate()
+  }
+  say('Now run: node scripts/texlive/serve.mjs --manifest && npm run build:texmf')
+}
+</script>

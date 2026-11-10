@@ -1,12 +1,17 @@
 {
   "manifest_version": 3,
   "name": "JSeek Enhancer",
-  "version": "1.2.0",
-  "description": "Automates resume tailoring, cold messages, H1-B filtering, and recruiter search across 12 job platforms.",
-  "permissions": ["activeTab", "downloads", "storage", "clipboardWrite"],
+  "version": "2.0.0",
+  "description": "Tailors your LaTeX resume and cover letter to any job posting with your own Claude or free Gemini/Groq key, plus H-1B filtering and ATS auto-fill.",
+  "permissions": [
+    "activeTab",
+    "downloads",
+    "storage",
+    "tabs",
+    "scripting",
+    "clipboardWrite"
+  ],
   "host_permissions": [
-    "*://*/*",
-    "http://localhost:4567/*",
     "https://jseek.co/*",
     "https://*.linkedin.com/*",
     "https://*.jobright.ai/*",
@@ -27,12 +32,22 @@
     "https://builtinsf.com/*",
     "https://builtinseattle.com/*",
     "https://wellfound.com/*",
-    "https://www.dice.com/*"
+    "https://www.dice.com/*",
+    "https://jobs.ashbyhq.com/*",
+    "https://*.icims.com/*",
+    "https://jobs.smartrecruiters.com/*",
+    "https://*.bamboohr.com/*",
+    "https://*.jazz.co/*",
+    "https://*.applytojob.com/*",
+    "https://jobs.rippling.com/*",
+    "https://api.anthropic.com/*",
+    "https://generativelanguage.googleapis.com/*",
+    "https://api.groq.com/*",
+    "https://api.cerebras.ai/*"
   ],
   "content_scripts": [
     {
       "matches": [
-        "*://*/*",
         "https://jseek.co/*",
         "https://*.linkedin.com/*",
         "https://*.jobright.ai/*",
@@ -53,23 +68,74 @@
         "https://builtinsf.com/*",
         "https://builtinseattle.com/*",
         "https://wellfound.com/*",
-        "https://www.dice.com/*"
+        "https://www.dice.com/*",
+        "https://jobs.ashbyhq.com/*",
+        "https://*.icims.com/*",
+        "https://jobs.smartrecruiters.com/*",
+        "https://*.bamboohr.com/*",
+        "https://*.jazz.co/*",
+        "https://*.applytojob.com/*",
+        "https://jobs.rippling.com/*"
       ],
-      "js": ["site_configs.js", "content_script.js"],
+      "js": [
+        "site_configs.js",
+        "content_script.js"
+      ],
       "run_at": "document_idle"
     }
   ],
   "background": {
-    "scripts": ["background.js"]
+    "scripts": [
+      "background.js"
+    ],
+    "type": "module"
   },
   "options_ui": {
     "page": "options.html",
-    "open_in_tab": false
+    "open_in_tab": true
   },
   "web_accessible_resources": [
     {
-      "resources": ["h1b_data.json"],
-      "matches": ["https://jseek.co/*"]
+      "resources": [
+        "h1b_data.json"
+      ],
+      "matches": [
+        "https://jseek.co/*"
+      ]
     }
-  ]
+  ],
+  "optional_host_permissions": [
+    "*://*/*",
+    "http://localhost:4567/*"
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "jseek-enhancer@jseek.extension",
+      "strict_min_version": "128.0",
+      "data_collection_permissions": {
+        "required": [
+          "personallyIdentifyingInfo",
+          "websiteContent"
+        ]
+      }
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_title": "JSeek Enhancer",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  }
 }

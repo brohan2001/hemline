@@ -68,6 +68,22 @@ describe('GET /health', () => {
   })
 })
 
+describe('GET /api/resume', () => {
+  it('returns the compiled resume PDF', async () => {
+    const res = await request(app).get('/api/resume')
+    expect(res.status).toBe(200)
+    expect(res.headers['content-type']).toMatch(/application\/pdf/)
+    expect(res.headers['content-disposition']).toMatch(/swe\.pdf/)
+  })
+
+  it('returns 404 when swe.pdf is missing', async () => {
+    vi.mocked(fsp.readFile).mockImplementationOnce(async () => { throw new Error('ENOENT') })
+    const res = await request(app).get('/api/resume')
+    expect(res.status).toBe(404)
+    expect(res.body.error).toBeDefined()
+  })
+})
+
 describe('GET /stats', () => {
   it('aggregates request and model events from pipeline.log', async () => {
     const LOG = [

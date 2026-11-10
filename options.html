@@ -2,49 +2,79 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>JSeek Enhancer Options</title>
-<style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    background: #f9fafb;
-    color: #111827;
-    width: 420px;
-    padding: 20px;
-  }
-  h1 { font-size: 16px; margin-bottom: 4px; }
-  .sub { font-size: 12px; color: #6b7280; margin-bottom: 16px; }
-  label { display: block; font-size: 12px; font-weight: 600; color: #374151; margin: 10px 0 4px; }
-  input, textarea {
-    width: 100%;
-    padding: 7px 9px;
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
-    font-size: 13px;
-    font-family: inherit;
-    background: #fff;
-  }
-  textarea { resize: vertical; min-height: 60px; }
-  .row { display: flex; gap: 10px; }
-  .row > div { flex: 1; }
-  .actions { display: flex; gap: 10px; align-items: center; margin-top: 16px; }
-  button {
-    padding: 8px 16px;
-    border: 1px solid #1d4ed8;
-    border-radius: 6px;
-    background: #1d4ed8;
-    color: #fff;
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
-  }
-  button:hover { background: #1e40af; }
-  #status { font-size: 12px; color: #059669; font-weight: 600; }
-</style>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JSeek Enhancer Settings</title>
+<link rel="stylesheet" href="options.css">
 </head>
 <body>
-  <h1>JSeek Enhancer</h1>
-  <p class="sub">Profile used by the ATS Auto-Fill button. Leave a field blank to use the built-in default.</p>
+<main>
+  <header>
+    <h1>JSeek Enhancer</h1>
+    <p class="sub">Everything stays in your browser. Your resume and the job description are sent only to the AI provider whose key you add below.</p>
+    <ol id="checklist" class="checklist">
+      <li data-step="key">Add an AI key</li>
+      <li data-step="resume">Import your resume</li>
+      <li data-step="profile">Fill in your profile</li>
+    </ol>
+  </header>
+
+  <section id="keys-section">
+    <h2>1. AI keys</h2>
+    <p class="sub">Keys are tried top to bottom; if one fails or runs out of quota, JSeek moves to the next.
+      <strong>Claude</strong> needs a paid Anthropic API key (a Claude.ai subscription does not work here).
+      <strong>Gemini</strong>, <strong>Groq</strong> and <strong>Cerebras</strong> have free tiers.</p>
+    <div id="key-list"></div>
+    <div class="actions">
+      <button id="add-key" class="secondary">+ Add key</button>
+      <span id="key-links" class="sub"></span>
+    </div>
+  </section>
+
+  <section id="resume-section">
+    <h2>2. Your resume</h2>
+    <p class="sub">Paste your resume as plain text and JSeek converts it once into its LaTeX template. Already have a LaTeX resume in Jake's template? Paste or upload it directly.</p>
+    <div class="tabs">
+      <button class="tab active" data-tab="paste">Paste text</button>
+      <button class="tab" data-tab="tex">LaTeX source</button>
+    </div>
+    <div data-panel="paste">
+      <textarea id="resume-text" rows="10" placeholder="Paste the text of your current resume here"></textarea>
+      <div class="actions">
+        <button id="convert">Convert to LaTeX</button>
+        <span id="convert-status" class="status"></span>
+      </div>
+    </div>
+    <div data-panel="tex" hidden>
+      <textarea id="resume-tex" rows="16" spellcheck="false" class="mono" placeholder="\documentclass..."></textarea>
+      <div class="actions">
+        <label class="file-btn secondary">Upload .tex<input id="tex-file" type="file" accept=".tex" hidden></label>
+        <button id="preview" class="secondary">Preview PDF</button>
+        <button id="save-resume">Save resume</button>
+        <span id="resume-status" class="status"></span>
+      </div>
+    </div>
+    <iframe id="pdf-preview" title="Resume preview" hidden></iframe>
+
+    <details>
+      <summary>Project pool and skill pool (optional, improves tailoring)</summary>
+      <p class="sub">Project pool: extra <code>\resumeProjectHeading</code> blocks. JSeek picks the 3 that best fit each job.</p>
+      <textarea id="project-pool" rows="8" spellcheck="false" class="mono"></textarea>
+      <p class="sub">Skill pool: every skill you would be willing to list, comma-separated. JSeek pulls the ones each job asks for.</p>
+      <textarea id="skill-pool" rows="4"></textarea>
+      <div class="actions">
+        <button id="load-sample-pool" class="secondary">Insert sample project</button>
+        <button id="save-pools">Save pools</button>
+        <span id="pools-status" class="status"></span>
+      </div>
+    </details>
+  </section>
+
+  <section id="profile-section">
+    <h2>3. Profile</h2>
+    <p class="sub">Used for your resume header, cover letters, and ATS auto-fill. Blank fields are never auto-filled.</p>
+
+    <label for="highlights">What should cover letters emphasize?</label>
+    <textarea id="highlights" rows="2" placeholder="e.g. MS CS; research on speech models; built a Kubernetes-scaled health app"></textarea>
 
   <div class="row">
     <div>
@@ -69,14 +99,148 @@
   <label for="github">GitHub URL</label>
   <input id="github" type="url">
 
+  <label for="website">Portfolio / Website</label>
+  <input id="website" type="url">
+
   <label for="skills">Skills Summary</label>
   <textarea id="skills"></textarea>
 
-  <div class="actions">
-    <button id="save">Save</button>
-    <span id="status"></span>
+  <div class="section">
+    <h2>Location</h2>
+    <div class="row">
+      <div>
+        <label for="city">City</label>
+        <input id="city">
+      </div>
+      <div>
+        <label for="state">State</label>
+        <input id="state">
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label for="stateAbbr">State Abbr.</label>
+        <input id="stateAbbr">
+      </div>
+      <div>
+        <label for="zip">Zip / Postal</label>
+        <input id="zip">
+      </div>
+      <div>
+        <label for="country">Country</label>
+        <input id="country">
+      </div>
+    </div>
   </div>
 
-<script src="options.js"></script>
+  <div class="section">
+    <h2>Work Status</h2>
+    <label for="workAuthorization">Work Authorization</label>
+    <select id="workAuthorization">
+      <option value=""></option>
+      <option value="U.S. Citizen">U.S. Citizen</option>
+      <option value="Green Card">Green Card / Permanent Resident</option>
+      <option value="F-1 OPT">F-1 OPT</option>
+      <option value="F-1 STEM OPT">F-1 STEM OPT</option>
+      <option value="H-1B">H-1B</option>
+      <option value="Other">Other</option>
+    </select>
+    <label for="requireSponsorship">Require Visa Sponsorship?</label>
+    <select id="requireSponsorship">
+      <option value=""></option>
+      <option value="Yes">Yes</option>
+      <option value="No">No</option>
+    </select>
+  </div>
+
+  <div class="section">
+    <h2>Experience</h2>
+    <div class="row">
+      <div>
+        <label for="yearsExperience">Years of Experience</label>
+        <input id="yearsExperience">
+      </div>
+      <div>
+        <label for="startDate">Earliest Start Date</label>
+        <input id="startDate">
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Education</h2>
+    <label for="educationLevel">Highest Education Level</label>
+    <select id="educationLevel">
+      <option value=""></option>
+      <option value="High School">High School</option>
+      <option value="Associate's Degree">Associate's Degree</option>
+      <option value="Bachelor's Degree">Bachelor's Degree</option>
+      <option value="Master's Degree">Master's Degree</option>
+      <option value="Doctorate">Doctorate (PhD)</option>
+    </select>
+    <label for="university">University</label>
+    <input id="university">
+    <div class="row">
+      <div>
+        <label for="major">Major</label>
+        <input id="major">
+      </div>
+      <div>
+        <label for="graduationYear">Grad Year</label>
+        <input id="graduationYear">
+      </div>
+      <div>
+        <label for="gpa">GPA</label>
+        <input id="gpa">
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Compensation</h2>
+    <div class="row">
+      <div>
+        <label for="salaryMin">Salary Min</label>
+        <input id="salaryMin">
+      </div>
+      <div>
+        <label for="salaryMax">Salary Max / Expected</label>
+        <input id="salaryMax">
+      </div>
+    </div>
+  </div>
+
+  <details>
+    <summary>EEO (optional, sensitive)</summary>
+    <p class="sub" style="margin-top:8px">Left blank by default. Fill only if you want these auto-filled.</p>
+    <label for="gender">Gender</label>
+    <input id="gender">
+    <label for="race">Race / Ethnicity</label>
+    <input id="race">
+    <label for="veteranStatus">Veteran Status</label>
+    <input id="veteranStatus">
+  </details>
+
+    <div class="actions">
+      <button id="save">Save profile</button>
+      <span id="status" class="status"></span>
+    </div>
+  </section>
+
+  <section id="advanced-section">
+    <h2>Advanced</h2>
+    <label class="check"><input type="checkbox" id="universal"> Show JSeek buttons on every careers page, not just the supported job boards (asks for access to all sites)</label>
+    <label for="backend">Processing</label>
+    <select id="backend">
+      <option value="extension">In the extension, using my keys above (default)</option>
+      <option value="local">My local JSeek server at localhost:4567 (developers)</option>
+    </select>
+    <div class="actions">
+      <button id="export-ledger" class="secondary">Export application history (JSON)</button>
+      <span id="ledger-count" class="sub"></span>
+    </div>
+  </section>
+</main>
+<script type="module" src="options.js"></script>
 </body>
 </html>

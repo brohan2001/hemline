@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JSeek Job Feed</title>
+<link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+
+<div class="header">
+  <div class="brand">&lt;job-seek&gt;<span class="live-dot"></span></div>
+  <span class="header-meta" id="last-refreshed">Loading…</span>
+  <div class="spacer"></div>
+  <span class="health" id="health-line"></span>
+  <span class="hlink" id="open-apps">Applied</span>
+  <span class="hlink" id="open-settings">Settings</span>
+  <button class="refresh-btn" id="refresh-btn"><span id="refresh-icon"></span>Refresh</button>
+</div>
+
+<div class="wl-head">
+  <span class="wl-title">United States · Software / ML Engineer</span>
+  <span class="wl-handle" id="wl-handle"></span>
+</div>
+
+<div class="filter-bar" id="filter-bar">
+  <span class="filter-label">⚙ Filters</span>
+
+  <div class="chip-wrap">
+    <div class="chip" data-chip="location"><span>◎</span><span id="lbl-location">US &amp; Remote</span><span class="chip-chevron">▾</span></div>
+    <div class="dropdown" id="dd-location">
+      <div class="ditem" data-val="all"><span class="check"></span>All Locations</div>
+      <div class="ditem selected" data-val="us"><span class="check">✓</span>US &amp; Remote</div>
+    </div>
+  </div>
+
+  <div class="chip-wrap">
+    <div class="chip" data-chip="role"><span>⊞</span><span id="lbl-role">Role</span><span class="chip-chevron">▾</span></div>
+    <div class="dropdown" id="dd-role">
+      <div class="ditem selected" data-val="all"><span class="check">✓</span>All Roles</div>
+      <div class="ditem" data-val="backend"><span class="check"></span>Backend</div>
+      <div class="ditem" data-val="frontend"><span class="check"></span>Frontend</div>
+      <div class="ditem" data-val="fullstack"><span class="check"></span>Fullstack</div>
+      <div class="ditem" data-val="cloud"><span class="check"></span>Cloud / DevOps</div>
+      <div class="ditem" data-val="ml"><span class="check"></span>ML / AI</div>
+      <div class="ditem" data-val="ds"><span class="check"></span>Data</div>
+      <div class="ditem" data-val="mobile"><span class="check"></span>Mobile</div>
+      <div class="ditem" data-val="network"><span class="check"></span>Network</div>
+    </div>
+  </div>
+
+  <div class="chip-wrap">
+    <div class="chip" data-chip="level"><span>▦</span><span id="lbl-level">Level</span><span class="chip-chevron">▾</span></div>
+    <div class="dropdown" id="dd-level">
+      <div class="ditem selected" data-val="all"><span class="check">✓</span>All Levels</div>
+      <div class="ditem" data-val="intern"><span class="check"></span>Intern</div>
+      <div class="ditem" data-val="entry"><span class="check"></span>Entry / New Grad</div>
+      <div class="ditem" data-val="mid"><span class="check"></span>Mid</div>
+      <div class="ditem" data-val="senior"><span class="check"></span>Senior</div>
+      <div class="ditem" data-val="staff"><span class="check"></span>Staff</div>
+      <div class="ditem" data-val="lead"><span class="check"></span>Lead+</div>
+    </div>
+  </div>
+
+  <div class="chip-wrap">
+    <div class="chip" data-chip="workMode"><span>⌂</span><span id="lbl-workMode">Work Mode</span><span class="chip-chevron">▾</span></div>
+    <div class="dropdown" id="dd-workMode">
+      <div class="ditem selected" data-val="any"><span class="check">✓</span>Any Mode</div>
+      <div class="ditem" data-val="remote"><span class="check"></span>Remote</div>
+      <div class="ditem" data-val="onsite"><span class="check"></span>On-site</div>
+    </div>
+  </div>
+
+  <div class="chip" id="toggle-h1b">⊛ H1-B Sponsors Only</div>
+  <div class="chip" id="toggle-early">★ Early Career</div>
+
+  <div class="search-box"><input id="search" placeholder="Search title, company…"></div>
+</div>
+
+<div class="subline">
+  <span id="showing">Loading jobs…</span>
+  <span><strong id="active-count">—</strong> active</span>
+</div>
+
+<div class="main">
+  <div class="list-wrap" id="list-wrap">
+    <div class="empty" id="empty" style="display:none"><h3>No jobs match these filters</h3><p>Try clearing a filter or hit Refresh.</p></div>
+    <div id="job-list"></div>
+    <div class="load-more" id="load-more" style="display:none"><button id="load-more-btn">Load more</button></div>
+  </div>
+
+  <div class="panel" id="panel">
+    <div class="panel-inner">
+      <div class="panel-head">
+        <span id="panel-logo-slot"></span>
+        <div style="min-width:0;flex:1">
+          <div class="panel-co" id="panel-co"></div>
+          <div class="panel-co-meta" id="panel-co-meta"></div>
+        </div>
+        <button class="view-btn" id="panel-view">View ↗</button>
+        <button class="panel-close" id="panel-close">×</button>
+      </div>
+      <div class="panel-body">
+        <div class="panel-title" id="panel-title"></div>
+        <div class="badges" id="panel-badges"></div>
+        <div class="actions">
+          <button class="act-btn" id="btn-resume">Resume</button>
+          <button class="act-btn" id="btn-cl">Resume &amp; CL</button>
+          <button class="act-btn sec" id="btn-msg">Message</button>
+          <button class="act-btn sec" id="btn-email">Email</button>
+        </div>
+        <div class="status" id="status"><span id="timer"></span></div>
+        <div class="msg-wrap" id="msg-wrap">
+          <textarea id="message" readonly></textarea>
+          <button class="copy-btn" id="copy-btn">Copy to Clipboard</button>
+        </div>
+        <div class="desc-toggle" id="desc-toggle"><span>Job Description</span><span id="desc-chevron">▾</span></div>
+        <div class="desc desc-text" id="panel-desc"></div>
+        <div class="score-strip" id="score-strip"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Applications modal -->
+<div class="modal-bg" id="apps-modal">
+  <div class="modal">
+    <div class="modal-head">
+      <h3>Applications <span id="app-count" style="color:var(--muted)"></span></h3>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input class="mini-input" id="app-filter" placeholder="Filter…">
+        <button class="csv-btn" id="export-csv">Export CSV</button>
+        <button class="panel-close" data-close="apps-modal">×</button>
+      </div>
+    </div>
+    <div class="modal-body">
+      <table id="app-table"><thead><tr><th>Date</th><th>Company</th><th>Title</th><th>Resume</th><th>CL</th></tr></thead><tbody></tbody></table>
+    </div>
+  </div>
+</div>
+
+<!-- Stats modal -->
+<div class="toast" id="toast"></div>
+
+<script type="module" src="dashboard.js"></script>
+</body>
+</html>

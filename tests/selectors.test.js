@@ -30,6 +30,7 @@ const PLATFORMS = [
   'jseek', 'linkedin', 'jobright', 'indeed',
   'glassdoor', 'greenhouse', 'lever', 'workday',
   'ziprecruiter', 'builtin', 'wellfound', 'dice',
+  'ashby', 'icims', 'smartrecruiters', 'bamboohr', 'jazzhr', 'rippling',
 ]
 
 describe('SITE_CONFIGS selector validation', () => {

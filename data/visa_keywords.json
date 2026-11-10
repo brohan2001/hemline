@@ -1,0 +1,16 @@
+{
+  "positive": [
+    "h-1b", "h1b", "visa sponsorship", "visa support", "sponsor",
+    "opt", "stem opt", "f-1", "f1", "we sponsor", "sponsorship available",
+    "sponsorship considered", "work authorization", "immigration support",
+    "sponsorship for work", "visa assistance"
+  ],
+  "negative": [
+    "no sponsorship", "not sponsor", "cannot sponsor", "will not sponsor",
+    "us citizen", "u.s. citizen", "citizen only", "clearance required",
+    "without sponsorship", "sponsorship not available", "gc or citizen",
+    "must be authorized", "must be eligible to work", "must have authorization",
+    "authorized to work without", "no visa", "does not sponsor",
+    "unable to sponsor", "not able to sponsor", "green card", "permanent resident only"
+  ]
+}

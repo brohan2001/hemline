@@ -1,15 +1,13 @@
 // ─── Constants ────────────────────────────────────────────────────────────────
-const SERVER = 'http://localhost:4567'
 const H1B_THRESHOLD = 50
+// Every field starts blank: auto-fill only ever uses what the user saved on the
+// options page, never a baked-in identity.
 const DEFAULT_PROFILE = {
-  firstName: 'Rohan',
-  lastName:  'Balasubramanian',
-  fullName:  'Rohan Balasubramanian',
-  email:     'you@example.com',
-  phone:     '000-000-0000',
-  linkedin:  'https://www.linkedin.com/in/brohan2001/',
-  github:    'https://github.com/brohan2001',
-  skills:    'Python, Java, JavaScript, TypeScript, Golang, C/C++, PyTorch, TensorFlow, AWS, GCP, Docker, Kubernetes, Terraform, CI/CD',
+  firstName: '', lastName: '', fullName: '', email: '', phone: '', linkedin: '', github: '', skills: '',
+  city: '', state: '', stateAbbr: '', country: '', zip: '',
+  workAuthorization: '', requireSponsorship: '', yearsExperience: '', educationLevel: '',
+  university: '', major: '', graduationYear: '', gpa: '', startDate: '',
+  salaryMin: '', salaryMax: '', gender: '', race: '', veteranStatus: '',
 }
 // Overridden from chrome.storage in init() when the options page saved a profile.
 let PROFILE = DEFAULT_PROFILE
@@ -25,9 +23,16 @@ let seniorityFilterActive = false
 let h1bFilterActive = false
 let llmProvider = 'claude'
 let serverUp = true
+let backendMode = 'extension'
+let notReadyReason = ''
 let jseekBusy = false
+let batchApplyActive = false
 
 const JOB_STATES = {}
+
+function persistJobStates() {
+  chrome.storage.local.set({ jobStates: JOB_STATES })
+}
 
 function getJobId() {
   return window.location.pathname.match(/\/jobs\/info\/([^/?#]+)/)?.[1] ?? window.location.pathname
@@ -143,19 +148,50 @@ function sanitizeForFilename(name) {
   return name.replace(/[^a-zA-Z0-9\-]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '') || 'Company'
 }
 
-async function callEndpoint(endpoint, payload) {
-  const resp = await fetch(`${SERVER}${endpoint}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...payload, provider: llmProvider }),
+// All heavy lifting happens in the background worker. A port (rather than a
+// one-shot message) lets us send keep-alive pings so Chrome doesn't suspend the
+// MV3 service worker during a 20-40 s LLM call.
+let bridgePort = null
+let bridgeSeq = 0
+const bridgePending = new Map()
+
+function getBridgePort() {
+  if (bridgePort) return bridgePort
+  bridgePort = chrome.runtime.connect({ name: 'jseek' })
+  bridgePort.onMessage.addListener((msg) => {
+    const pending = bridgePending.get(msg.id)
+    if (!pending) return
+    bridgePending.delete(msg.id)
+    if (msg.ok) pending.resolve(msg.result)
+    else {
+      let text = msg.error
+      if (msg.latexError) text += ` — LaTeX: ${msg.latexError.message}${msg.latexError.line ? ` (line ${msg.latexError.line})` : ''}`
+      pending.reject(new Error(text))
+    }
   })
-  if (!resp.ok) {
-    const err = await resp.json().catch(() => ({ error: resp.statusText }))
-    let msg = err.error ?? resp.statusText
-    if (err.latexError) msg += ` — LaTeX: ${err.latexError.message}${err.latexError.line ? ` (line ${err.latexError.line})` : ''}`
-    throw new Error(msg)
-  }
-  return { blob: await resp.blob(), matchScore: resp.headers.get('X-JSeek-Match-Score') }
+  bridgePort.onDisconnect.addListener(() => {
+    bridgePort = null
+    for (const p of bridgePending.values()) p.reject(new Error('JSeek background restarted; please retry.'))
+    bridgePending.clear()
+  })
+  return bridgePort
+}
+
+function callBackground(op, payload = {}) {
+  return new Promise((resolve, reject) => {
+    const id = ++bridgeSeq
+    const port = getBridgePort()
+    const keepAlive = setInterval(() => { try { port.postMessage({ ping: true }) } catch {} }, 20_000)
+    bridgePending.set(id, {
+      resolve: (v) => { clearInterval(keepAlive); resolve(v) },
+      reject: (e) => { clearInterval(keepAlive); reject(e) },
+    })
+    port.postMessage({ id, op, payload })
+  })
+}
+
+function callEndpoint(op, payload, options = {}) {
+  return callBackground(op, { ...payload, ...options, provider: llmProvider })
 }
 
 function applyHealthState() {
@@ -168,7 +204,7 @@ function applyHealthState() {
     btn.disabled = !serverUp
     if (!serverUp) {
       if (!btn.dataset.jseekTitle) btn.dataset.jseekTitle = btn.title
-      btn.title = 'JSeek server offline — run npm start'
+      btn.title = notReadyReason
     } else if (btn.dataset.jseekTitle) {
       btn.title = btn.dataset.jseekTitle
       delete btn.dataset.jseekTitle
@@ -177,23 +213,23 @@ function applyHealthState() {
 }
 
 async function pingHealth() {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 1500)
   try {
-    const resp = await fetch(`${SERVER}/health`, { signal: controller.signal })
-    serverUp = resp.ok
+    const st = await callBackground('STATUS')
+    backendMode = st.backend
+    serverUp = st.backend === 'local' || (st.hasKey && st.hasResume)
+    notReadyReason = !st.hasKey
+      ? 'JSeek: add an API key on the options page'
+      : 'JSeek: import your resume on the options page'
   } catch {
     serverUp = false
-  } finally {
-    clearTimeout(timer)
+    notReadyReason = 'JSeek background unavailable — reload the extension'
   }
   applyHealthState()
 }
 
 async function confirmNotDuplicate(companyName, jobTitle) {
   try {
-    const r = await fetch(`${SERVER}/applications/check?company=${encodeURIComponent(companyName)}&title=${encodeURIComponent(jobTitle)}`)
-    const d = await r.json()
+    const d = await callBackground('CHECK_DUPLICATE', { company: companyName, title: jobTitle })
     if (d.duplicate) {
       return confirm(`JSeek: already applied to ${companyName} on ${d.lastDate} (${d.timesApplied}x in the last 30 days). Generate anyway?`)
     }
@@ -201,13 +237,17 @@ async function confirmNotDuplicate(companyName, jobTitle) {
   return true
 }
 
-function blobToDataUrl(blob) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(reader.result)
-    reader.onerror = reject
-    reader.readAsDataURL(blob)
-  })
+async function loadStoredPdf(name) {
+  try {
+    const b64 = await callBackground('GET_PDF', { name })
+    if (!b64) return null
+    const bin = atob(b64)
+    const bytes = new Uint8Array(bin.length)
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+    return new Blob([bytes], { type: 'application/pdf' })
+  } catch {
+    return null
+  }
 }
 
 function makePillButton(text, tooltip) {
@@ -224,7 +264,8 @@ function injectActionButtons(cfg) {
   const jdEl = cfg.slug === 'universal' ? findUniversalElements() : findFirst(cfg.jobDescription)
   if (!jdEl) return
 
-  const jobId = getJobId()
+  const { companyName: ctxCompany, jobTitle: ctxTitle } = getDrawerContext(cfg)
+  const jobId = (ctxCompany && ctxTitle) ? `${ctxCompany}::${ctxTitle}` : getJobId()
   const jobState = JOB_STATES[jobId] ?? {}
 
   const wrapper = document.createElement('div')
@@ -236,8 +277,16 @@ function injectActionButtons(cfg) {
   const btnMessage = makePillButton('Message', 'Generate LinkedIn Recruiter Outreach')
   const btnEmail   = makePillButton('Email', 'Generate Recruiter Cold Email')
 
-  if (jobState.resume === 'done') btnResume.textContent = `Resume Downloaded ✓ (${jobState.resumeElapsed}s)`
-  if (jobState.both === 'done') btnBoth.textContent = `Both Downloaded ✓ (${jobState.bothElapsed}s total)`
+  if (jobState.resume === 'done') {
+    btnResume.textContent = jobState.resumeFilename
+      ? `${jobState.resumeFilename} ✓`
+      : `Resume Downloaded ✓ (${jobState.resumeElapsed}s)`
+  }
+  if (jobState.both === 'done') {
+    btnBoth.textContent = jobState.resumeFilename
+      ? `${jobState.resumeFilename} + CL ✓`
+      : `Both Downloaded ✓ (${jobState.bothElapsed}s total)`
+  }
   if (jobState.message === 'done') btnMessage.textContent = 'Copied ✓'
   if (jobState.email === 'done') btnEmail.textContent = 'Email Opened ✓'
 
@@ -258,7 +307,6 @@ function injectActionButtons(cfg) {
     if (!jobDescription) { alert('JSeek Enhancer: no job description found.'); return }
 
     const { companyName, jobTitle } = getDrawerContext(cfg)
-    const safe = sanitizeForFilename(companyName)
     if (companyName && !(await confirmNotDuplicate(companyName, jobTitle))) return
 
     const t0 = performance.now()
@@ -267,16 +315,15 @@ function injectActionButtons(cfg) {
     }, 200)
     setBusy(true)
     try {
-      const { blob, matchScore } = await callEndpoint('/tailor', { jobDescription, companyName, jobTitle })
-      const dataUrl = await blobToDataUrl(blob)
-      chrome.runtime.sendMessage({ type: 'DOWNLOAD_PDF', dataUrl, filename: `Rohan_Resume_${safe}.pdf` })
+      const { filename: resumeFilename, matchScore } = await callEndpoint('TAILOR', { jobDescription, companyName, jobTitle })
       clearInterval(timerInterval); timerInterval = null
       const elapsed = ((performance.now() - t0) / 1000).toFixed(1)
-      JOB_STATES[jobId] = { ...JOB_STATES[jobId], resume: 'done', resumeElapsed: elapsed }
-      btnResume.textContent = matchScore !== null
+      JOB_STATES[jobId] = { ...JOB_STATES[jobId], resume: 'done', resumeElapsed: elapsed, resumeFilename }
+      persistJobStates()
+      btnResume.textContent = matchScore != null
         ? `Resume ✓ ${matchScore}% match (${elapsed}s)`
         : `Resume Downloaded ✓ (${elapsed}s)`
-      setTimeout(() => { btnResume.textContent = 'Resume' }, 3000)
+      setTimeout(() => { btnResume.textContent = resumeFilename + ' ✓' }, 3000)
     } catch (err) {
       clearInterval(timerInterval); timerInterval = null
       alert(`JSeek Enhancer: ${err.message}`)
@@ -292,7 +339,6 @@ function injectActionButtons(cfg) {
     if (!jobDescription) { alert('JSeek Enhancer: no job description found.'); return }
 
     const { companyName, jobTitle } = getDrawerContext(cfg)
-    const safe = sanitizeForFilename(companyName)
     if (companyName && !(await confirmNotDuplicate(companyName, jobTitle))) return
 
     const t0 = performance.now()
@@ -302,19 +348,17 @@ function injectActionButtons(cfg) {
     }, 200)
     setBothBusy(true)
     try {
-      const { blob: resumeBlob } = await callEndpoint('/tailor', { jobDescription, companyName, jobTitle })
+      const { filename: resumeFilename } = await callEndpoint('TAILOR', { jobDescription, companyName, jobTitle })
       // 2.5s stagger prevents concurrent-connection 429 blocks on free API tiers.
       await sleep(2500)
       phase = 'Writing CL'
-      const { blob: clBlob } = await callEndpoint('/cover-letter', { jd: jobDescription, companyName, jobTitle })
-      const [resumeDataUrl, clDataUrl] = await Promise.all([blobToDataUrl(resumeBlob), blobToDataUrl(clBlob)])
-      chrome.runtime.sendMessage({ type: 'DOWNLOAD_PDF', dataUrl: resumeDataUrl, filename: `Rohan_Resume_${safe}.pdf` })
-      chrome.runtime.sendMessage({ type: 'DOWNLOAD_PDF', dataUrl: clDataUrl, filename: `Rohan_CL_${safe}.pdf` })
+      await callEndpoint('COVER_LETTER', { jd: jobDescription, companyName, jobTitle })
       clearInterval(timerInterval); timerInterval = null
       const elapsed = ((performance.now() - t0) / 1000).toFixed(1)
-      JOB_STATES[jobId] = { ...JOB_STATES[jobId], both: 'done', bothElapsed: elapsed }
+      JOB_STATES[jobId] = { ...JOB_STATES[jobId], both: 'done', bothElapsed: elapsed, resumeFilename }
+      persistJobStates()
       btnBoth.textContent = `Both Downloaded ✓ (${elapsed}s total)`
-      setTimeout(() => { btnBoth.textContent = 'Resume & CL' }, 3000)
+      setTimeout(() => { btnBoth.textContent = `${resumeFilename} + CL ✓` }, 3000)
     } catch (err) {
       clearInterval(timerInterval); timerInterval = null
       alert(`JSeek Enhancer: ${err.message}`)
@@ -337,16 +381,7 @@ function injectActionButtons(cfg) {
     }, 200)
     setAllBusy(true)
     try {
-      const resp = await fetch(`${SERVER}/cold-message`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jd, companyName, jobTitle }),
-      })
-      if (!resp.ok) {
-        const err = await resp.json().catch(() => ({ error: resp.statusText }))
-        throw new Error(err.error ?? resp.statusText)
-      }
-      const { message } = await resp.json()
+      const { message } = await callEndpoint('COLD_MESSAGE', { jd, companyName, jobTitle })
       clearInterval(timerInterval); timerInterval = null
       await navigator.clipboard.writeText(message)
       if (companyName) {
@@ -354,6 +389,7 @@ function injectActionButtons(cfg) {
         window.open(`https://www.linkedin.com/search/results/people/?keywords=${q}`, '_blank', 'noopener')
       }
       JOB_STATES[jobId] = { ...JOB_STATES[jobId], message: 'done' }
+      persistJobStates()
       btnMessage.textContent = 'Copied ✓'
       setTimeout(() => { btnMessage.textContent = 'Message' }, 3000)
     } catch (err) {
@@ -378,19 +414,11 @@ function injectActionButtons(cfg) {
     }, 200)
     setBusy(true)
     try {
-      const resp = await fetch(`${SERVER}/cold-email`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jd, companyName, jobTitle, provider: llmProvider }),
-      })
-      if (!resp.ok) {
-        const err = await resp.json().catch(() => ({ error: resp.statusText }))
-        throw new Error(err.error ?? resp.statusText)
-      }
-      const { subject, body } = await resp.json()
+      const { subject, body } = await callEndpoint('COLD_EMAIL', { jd, companyName, jobTitle })
       clearInterval(timerInterval); timerInterval = null
       window.open(`mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`, '_blank')
       JOB_STATES[jobId] = { ...JOB_STATES[jobId], email: 'done' }
+      persistJobStates()
       btnEmail.textContent = 'Email Opened ✓'
       setTimeout(() => { btnEmail.textContent = 'Email' }, 3000)
     } catch (err) {
@@ -413,8 +441,11 @@ function injectActionButtons(cfg) {
 }
 
 // ─── Feature: ATS Easy Apply Auto-Filler (Greenhouse / Lever / Workday) ──────
-const ATS_SLUGS = ['greenhouse', 'lever', 'workday']
+const ATS_SLUGS = ['greenhouse', 'lever', 'workday', 'ashby', 'icims', 'smartrecruiters', 'bamboohr', 'jazzhr', 'rippling']
 
+// Order matters: more specific patterns must precede broad ones (e.g. salary.*min
+// before any generic salary match, state.*abbr before plain state). EEO fields
+// resolve to '' by default and are skipped by the blank guard in autoFillForm.
 const FIELD_PATTERNS = [
   { re: /first[\s_-]?name|legalNameSection_firstName/i, value: () => PROFILE.firstName },
   { re: /last[\s_-]?name|legalNameSection_lastName/i,   value: () => PROFILE.lastName },
@@ -424,6 +455,25 @@ const FIELD_PATTERNS = [
   { re: /linked[\s_-]?in/i,                             value: () => PROFILE.linkedin },
   { re: /github|portfolio|website/i,                    value: () => PROFILE.github },
   { re: /skills/i,                                      value: () => PROFILE.skills },
+  { re: /\bstate\b.*(abbr|code)|(abbr|code).*\bstate\b/i, value: () => PROFILE.stateAbbr },
+  { re: /city|municipality/i,                           value: () => PROFILE.city },
+  { re: /country|nation/i,                              value: () => PROFILE.country },
+  { re: /zip|postal/i,                                  value: () => PROFILE.zip },
+  { re: /\bstate\b|province|region/i,                   value: () => PROFILE.state },
+  { re: /sponsor/i,                                     value: () => PROFILE.requireSponsorship },
+  { re: /work.*auth|authorization|visa|eligib|citizenship/i, value: () => PROFILE.workAuthorization },
+  { re: /years.*exp|experience.*years/i,                value: () => PROFILE.yearsExperience },
+  { re: /education.*level|highest.*degree|degree.*level/i, value: () => PROFILE.educationLevel },
+  { re: /major|field.*study|degree.*program/i,         value: () => PROFILE.major },
+  { re: /universit|college|school/i,                    value: () => PROFILE.university },
+  { re: /grad(?:uation)?.*year|class.*of/i,            value: () => PROFILE.graduationYear },
+  { re: /\bgpa\b|grade.*point/i,                        value: () => PROFILE.gpa },
+  { re: /start.*date|available|earliest/i,             value: () => PROFILE.startDate },
+  { re: /salary.*min|minimum.*salary|comp.*min/i,      value: () => PROFILE.salaryMin },
+  { re: /salary.*max|maximum.*salary|comp.*max|expected.*salary|desired.*salary|salary/i, value: () => PROFILE.salaryMax },
+  { re: /\bgender\b/i,                                  value: () => PROFILE.gender },
+  { re: /\brace\b|ethnicity/i,                          value: () => PROFILE.race },
+  { re: /veteran/i,                                     value: () => PROFILE.veteranStatus },
 ]
 
 function fieldDescriptor(el) {
@@ -449,17 +499,133 @@ function setFieldValue(el, value) {
   el.blur()
 }
 
-function autoFillForm() {
+// Fuzzy-match a profile value against a <select>'s options: exact text/value match
+// first, then best substring overlap. Skips placeholder/disabled options.
+function setSelectValue(el, value) {
+  const norm = v => v.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim()
+  const target = norm(value)
+  if (!target) return false
+  let best = null
+  let bestScore = 0
+  for (const opt of el.options) {
+    if (opt.disabled || !opt.value) continue
+    const optText = norm(opt.text)
+    const optVal = norm(opt.value)
+    if (optText === target || optVal === target) { best = opt; break }
+    if (optText && (optText.includes(target) || target.includes(optText))) {
+      const score = Math.min(optText.length, target.length) / Math.max(optText.length, target.length)
+      if (score > bestScore) { bestScore = score; best = opt }
+    }
+  }
+  if (!best) return false
+  el.focus()
+  el.value = best.value
+  el.dispatchEvent(new Event('change', { bubbles: true }))
+  el.blur()
+  return true
+}
+
+// Radios share a name; pick the one whose value or label text matches the profile value.
+function fillRadioGroup(radios, value) {
+  const norm = v => v.toLowerCase().trim()
+  const target = norm(value)
+  for (const radio of radios) {
+    const label = norm(fieldDescriptor(radio))
+    if (norm(radio.value) === target || label.includes(target)) {
+      radio.focus()
+      radio.checked = true
+      radio.dispatchEvent(new Event('change', { bubbles: true }))
+      radio.blur()
+      return true
+    }
+  }
+  return false
+}
+
+async function autoFillForm(root = document) {
   let filled = 0
-  findAll('input[type="text"], input[type="email"], input[type="tel"], input[type="url"], input:not([type]), textarea').forEach(el => {
+
+  // Text-like inputs and textareas
+  findAll('input[type="text"], input[type="email"], input[type="tel"], input[type="url"], input:not([type]), textarea', root).forEach(el => {
     if (el.value) return
     const desc = fieldDescriptor(el)
     if (!desc) return
     const match = FIELD_PATTERNS.find(p => p.re.test(desc))
     if (!match) return
-    setFieldValue(el, match.value())
+    const val = match.value()
+    if (!val) return
+    setFieldValue(el, val)
     filled++
   })
+
+  // <select> dropdowns — skip if a non-placeholder option is already chosen
+  findAll('select', root).forEach(el => {
+    if (el.value && el.value !== el.options[0]?.value) return
+    const desc = fieldDescriptor(el)
+    if (!desc) return
+    const match = FIELD_PATTERNS.find(p => p.re.test(desc))
+    if (!match) return
+    const val = match.value()
+    if (!val) return
+    if (setSelectValue(el, val)) filled++
+  })
+
+  // Radio buttons — group by name, fill once per unanswered group
+  const radioGroups = {}
+  findAll('input[type="radio"]', root).forEach(el => {
+    const key = el.name || el.getAttribute('data-name') || el.id
+    if (!key) return
+    ;(radioGroups[key] ??= []).push(el)
+  })
+  for (const radios of Object.values(radioGroups)) {
+    if (radios.some(r => r.checked)) continue
+    const desc = fieldDescriptor(radios[0])
+    if (!desc) continue
+    const match = FIELD_PATTERNS.find(p => p.re.test(desc))
+    if (!match) continue
+    const val = match.value()
+    if (!val) continue
+    if (fillRadioGroup(radios, val)) filled++
+  }
+
+  // Checkboxes — only auto-check consent/agreement boxes, never demographic ones
+  findAll('input[type="checkbox"]', root).forEach(el => {
+    if (el.checked) return
+    if (/agree|consent|terms|privacy|authorize/i.test(fieldDescriptor(el))) {
+      el.focus()
+      el.checked = true
+      el.dispatchEvent(new Event('change', { bubbles: true }))
+      el.blur()
+      filled++
+    }
+  })
+
+  filled += await fillResumeUpload(root)
+  return filled
+}
+
+// Loads the last-compiled master resume from the bridge server and injects it into
+// any empty PDF file input via DataTransfer (the only way to set input.files in JS).
+async function fillResumeUpload(root = document) {
+  const fileInputs = findAll('input[type="file"]', root)
+    .filter(el => !el.files?.length && (!el.accept || el.accept.toLowerCase().includes('pdf')))
+  if (!fileInputs.length) return 0
+
+  const blob = await loadStoredPdf('resume')
+  if (!blob) return 0
+
+  const name = PROFILE.firstName ? `${sanitizeForFilename(`${PROFILE.firstName} ${PROFILE.lastName}`)}_Resume.pdf` : 'Resume.pdf'
+  const file = new File([blob], name, { type: 'application/pdf' })
+  let filled = 0
+  for (const el of fileInputs) {
+    try {
+      const dt = new DataTransfer()
+      dt.items.add(file)
+      el.files = dt.files
+      el.dispatchEvent(new Event('change', { bubbles: true }))
+      filled++
+    } catch { /* DataTransfer unavailable in this context */ }
+  }
   return filled
 }
 
@@ -469,15 +635,54 @@ function injectAutoFillButton() {
   const form = findFirst('form')
   if (!form) return
 
-  const btn = makePillButton('Auto-Fill', 'Fill name, email, GitHub, LinkedIn, and skills from local profile')
+  const btn = makePillButton('Auto-Fill', 'Fill profile details and attach your resume to this application form')
   btn.id = 'jseek-autofill-btn'
-  btn.addEventListener('click', (e) => {
+  btn.addEventListener('click', async (e) => {
     e.preventDefault()
-    const filled = autoFillForm()
+    btn.textContent = 'Filling…'
+    const filled = await autoFillForm()
     btn.textContent = filled > 0 ? `Auto-Filled ${filled} fields ✓` : 'No empty fields matched'
+    if (filled > 0) highlightNextButton()
     setTimeout(() => { btn.textContent = 'Auto-Fill' }, 3000)
   })
   form.insertAdjacentElement('beforebegin', btn)
+}
+
+// Multi-step forms have a Next/Continue that advances rather than submits. After a
+// fill we highlight it so the user can review and advance — we never auto-submit.
+const NEXT_BTN_RE = /\bnext\b|\bcontinue\b|\bproceed\b|\breview\b/i
+const SUBMIT_BTN_RE = /\bsubmit\b|\bapply\b|\bsend\b/i
+
+function highlightNextButton(root = document) {
+  const btn = findAll('button, a[role="button"]', root)
+    .find(el => NEXT_BTN_RE.test(el.textContent) && !SUBMIT_BTN_RE.test(el.textContent))
+  if (!btn) return
+  btn.style.outline = '3px solid #10b981'
+  btn.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  setTimeout(() => { btn.style.outline = '' }, 3000)
+}
+
+// ─── Feature: LinkedIn Easy Apply Auto-Fill ──────────────────────────────────
+// Easy Apply opens a modal long after document_idle, and its content reloads in
+// waves as the user steps through the flow — so we watch for it and fill the
+// modal (scoped, never the page behind it) on a debounce instead of via a button.
+const LI_EASY_APPLY_MODAL = '[class*="jobs-easy-apply-modal"], [class*="easy-apply-content"]'
+
+function watchLinkedInEasyApply() {
+  if (document.body.dataset.jseekLiWatcher) return
+  document.body.dataset.jseekLiWatcher = '1'
+
+  let fillTimer = null
+  const observer = new MutationObserver(() => {
+    const modal = findFirst(LI_EASY_APPLY_MODAL)
+    if (!modal) return
+    clearTimeout(fillTimer)
+    fillTimer = setTimeout(async () => {
+      const filled = await autoFillForm(modal)
+      if (filled > 0) highlightNextButton(modal)
+    }, 400)
+  })
+  observer.observe(document.body, { childList: true, subtree: true })
 }
 
 // ─── Feature: Universal Semantic Scraper (unmapped hosts) ────────────────────
@@ -614,7 +819,10 @@ function applyH1bFilter() {
 }
 
 // ─── Feature 5: LLM Provider Toggle ──────────────────────────────────────────
+// Only meaningful with the optional local dev server; extension mode routes
+// through the user's own API keys configured on the options page.
 function injectLlmToggle(sidebar) {
+  if (backendMode !== 'local') return
   if (document.getElementById('jseek-llm-toggle')) return
 
   const btn = makeToggleButton('jseek-llm-toggle', llmProvider === 'relay' ? '⚡ LLM: Relay (Local)' : '⚡ LLM: Claude')
@@ -626,6 +834,31 @@ function injectLlmToggle(sidebar) {
     btn.dataset.active = String(llmProvider === 'relay')
     btn.textContent = llmProvider === 'relay' ? '⚡ LLM: Relay (Local)' : '⚡ LLM: Claude'
     chrome.storage.local.set({ llmProvider })
+  })
+
+  sidebar.prepend(btn)
+}
+
+// ─── Feature 6: Batch Apply Toggle ───────────────────────────────────────────
+function injectBatchApplyToggle(sidebar) {
+  if (document.getElementById('jseek-batch-toggle')) return
+
+  const btn = makeToggleButton('jseek-batch-toggle', '📋 Batch Apply')
+  btn.title = 'Enable batch job selection and one-click multi-apply'
+  btn.dataset.active = String(batchApplyActive)
+
+  btn.addEventListener('click', () => {
+    batchApplyActive = !batchApplyActive
+    btn.dataset.active = String(batchApplyActive)
+    chrome.storage.local.set({ batchApplyEnabled: batchApplyActive })
+
+    if (!batchApplyActive) {
+      findAll('.jseek-select-box').forEach(el => el.remove())
+      document.getElementById('jseek-apply-bar')?.remove()
+      selectedJobs.clear()
+    } else {
+      injectJobSelection(activeCfg)
+    }
   })
 
   sidebar.prepend(btn)
@@ -701,6 +934,387 @@ function injectDrawerEnhancements() {
   drawerHeader.appendChild(liBtn)
 }
 
+// ─── Feature: 1-Click Batch Apply (jseek watchlist) ─────────────────────────
+// CLEAN_ATS auto-submit; everything else fills and stops at review.
+const CLEAN_ATS = ['greenhouse', 'lever', 'ashby']
+
+const selectedJobs = new Map()
+const progressJobs = new Map()
+
+injectStyle(`
+  /* jseek cards carry an absolute inset-0 overlay button that intercepts every
+     click — position:relative + a high z-index lifts our checkbox above it so
+     manual toggles actually land on the input. */
+  .jseek-select-box {
+    position: relative;
+    z-index: 20;
+    display: inline-flex;
+    align-items: center;
+    margin-right: 8px;
+    flex-shrink: 0;
+  }
+  .jseek-select-box input { position: relative; z-index: 20; width: 16px; height: 16px; cursor: pointer; accent-color: #3b82f6; }
+
+  #jseek-apply-bar {
+    position: fixed;
+    bottom: 16px;
+    right: 16px;
+    z-index: 2147483646;
+    width: 280px;
+    background: #ffffff;
+    border: 1px solid #d1d5db;
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+    font-family: system-ui, sans-serif;
+    font-size: 13px;
+    color: #111827;
+    overflow: hidden;
+  }
+  #jseek-apply-bar .jseek-bar-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    background: #f9fafb;
+    border-bottom: 1px solid #e5e7eb;
+    font-weight: 600;
+  }
+  #jseek-apply-bar .jseek-bar-actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 12px; }
+  #jseek-apply-bar button {
+    flex: 1 1 auto;
+    padding: 6px 8px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    background: #f3f4f6;
+    font-size: 12px;
+    font-weight: 600;
+    color: #374151;
+    cursor: pointer;
+  }
+  #jseek-apply-bar button.primary { background: #2563eb; border-color: #2563eb; color: #fff; flex-basis: 100%; }
+  #jseek-apply-bar button:disabled { opacity: 0.5; cursor: not-allowed; }
+  #jseek-apply-bar .jseek-skip { display: flex; align-items: center; gap: 6px; padding: 0 12px 8px; font-size: 12px; color: #6b7280; }
+  #jseek-apply-progress { max-height: 200px; overflow-y: auto; border-top: 1px solid #e5e7eb; }
+  #jseek-apply-progress:empty { display: none; }
+  .jseek-prog-row { display: flex; justify-content: space-between; gap: 8px; padding: 6px 12px; border-bottom: 1px solid #f3f4f6; }
+  .jseek-prog-row .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .jseek-prog-row .s { flex-shrink: 0; font-weight: 600; font-size: 11px; }
+  .jseek-prog-row .s.submitted { color: #047857; }
+  .jseek-prog-row .s.needs_review { color: #b45309; }
+  .jseek-prog-row .s.failed, .jseek-prog-row .s.duplicate { color: #b91c1c; }
+`)
+
+function showParam() {
+  return new URLSearchParams(location.search).get('show')
+}
+
+// The watchlist card holds no apply URL — it only opens a drawer (?show={id})
+// that renders the real external ATS link, which jseek tags with
+// utm_source=jobseek. So pick the jobseek-tagged external link, else the first
+// non-jseek http link the drawer rendered.
+function findDrawerApplyUrl() {
+  const externals = findAll('a[href]').filter(a => {
+    try { return /^https?:/.test(a.href) && new URL(a.href).hostname !== 'jseek.co' } catch { return false }
+  })
+  if (!externals.length) return null
+  const tagged = externals.find(a => /utm_source=jobseek/i.test(a.href))
+  return (tagged ?? externals[0]).href
+}
+
+// Click the card's overlay button to open its drawer, wait for ?show to switch
+// to this job and the external apply link to render, then read it off.
+async function resolveCardApplyUrl(card) {
+  const overlay = card.querySelector('button[aria-label]')
+  if (!overlay) return null
+  const prevShow = showParam()
+  overlay.click()
+  const start = Date.now()
+  while (Date.now() - start < 8000) {
+    await sleep(250)
+    const show = showParam()
+    if (!show || show === prevShow) continue
+    const url = findDrawerApplyUrl()
+    if (url) return url
+  }
+  return findDrawerApplyUrl()
+}
+
+function getCardInfo(card, cfg) {
+  const title = findFirst(cfg.jobTitle, card)?.textContent.trim() ?? ''
+  const company = findFirst(cfg.companyName, card)?.textContent.replace(/H1-B:.*$/i, '').trim() ?? ''
+  return { id: `${company}::${title}`, title, company }
+}
+
+function injectJobSelection(cfg) {
+  const cards = findAll(cfg.jobCards)
+  if (!cards.length) return
+
+  for (const card of cards) {
+    try {
+    if (card.querySelector('.jseek-select-box')) {
+      // Re-sync checkbox state after a React re-render reused the node.
+      const box = card.querySelector('.jseek-select-box input')
+      if (box) box.checked = selectedJobs.has(card.dataset.jseekKey)
+      continue
+    }
+    const info = getCardInfo(card, cfg)
+    card.dataset.jseekKey = info.id
+
+    const wrap = document.createElement('label')
+    // relative + z-20 mirror the CSS stacking lift in Tailwind terms, in case
+    // the page's utility classes win specificity over our injected stylesheet.
+    wrap.className = 'jseek-select-box relative z-20'
+    const box = document.createElement('input')
+    box.type = 'checkbox'
+    box.className = 'relative z-20'
+    box.checked = selectedJobs.has(info.id)
+    box.title = 'Select for batch apply'
+    // Swallow the event on every phase the card overlay listens to so toggling
+    // never bubbles up and triggers the drawer.
+    const stop = e => { e.stopPropagation(); e.stopImmediatePropagation() }
+    for (const evt of ['pointerdown', 'mousedown', 'click']) {
+      wrap.addEventListener(evt, stop)
+      box.addEventListener(evt, stop)
+    }
+    box.addEventListener('change', () => {
+      if (box.checked) selectedJobs.set(info.id, getCardInfo(card, cfg))
+      else selectedJobs.delete(info.id)
+      updateApplyBar()
+    })
+    wrap.appendChild(box)
+    card.prepend(wrap)
+    } catch (err) {
+      // One malformed card must not break injection for the rest of the list.
+      console.warn('JSeek Enhancer: skipped a watchlist card', err)
+    }
+  }
+  ensureApplyBar()
+  updateApplyBar()
+}
+
+function ensureApplyBar() {
+  if (document.getElementById('jseek-apply-bar')) return
+
+  const bar = document.createElement('div')
+  bar.id = 'jseek-apply-bar'
+  bar.innerHTML = `
+    <div class="jseek-bar-head"><span>Batch Apply</span><span id="jseek-apply-count">0 selected</span></div>
+    <div class="jseek-skip"><input type="checkbox" id="jseek-skip-tailor"><label for="jseek-skip-tailor">Skip tailoring (use master resume)</label></div>
+    <div class="jseek-bar-actions">
+      <button id="jseek-apply-go" class="primary">Apply to 0 selected</button>
+      <button id="jseek-apply-all">Select visible</button>
+      <button id="jseek-apply-clear">Clear</button>
+      <button id="jseek-apply-pause" style="display:none">Pause</button>
+      <button id="jseek-apply-stop" style="display:none">Stop</button>
+    </div>
+    <div id="jseek-apply-progress"></div>`
+  document.body.appendChild(bar)
+
+  bar.querySelector('#jseek-apply-go').addEventListener('click', startApplyQueue)
+  bar.querySelector('#jseek-apply-all').addEventListener('click', () => {
+    findAll(activeCfg.jobCards).forEach(card => {
+      const box = card.querySelector('.jseek-select-box input')
+      if (box && !box.checked) { box.checked = true; box.dispatchEvent(new Event('change')) }
+    })
+  })
+  bar.querySelector('#jseek-apply-clear').addEventListener('click', () => {
+    selectedJobs.clear()
+    findAll('.jseek-select-box input').forEach(b => { b.checked = false })
+    updateApplyBar()
+  })
+  bar.querySelector('#jseek-apply-pause').addEventListener('click', e => {
+    const paused = e.target.dataset.paused === 'true'
+    chrome.runtime.sendMessage({ type: paused ? 'RESUME_QUEUE' : 'PAUSE_QUEUE' })
+    e.target.dataset.paused = String(!paused)
+    e.target.textContent = paused ? 'Pause' : 'Resume'
+  })
+  bar.querySelector('#jseek-apply-stop').addEventListener('click', () => {
+    chrome.runtime.sendMessage({ type: 'STOP_QUEUE' })
+  })
+}
+
+function updateApplyBar() {
+  const count = selectedJobs.size
+  const countEl = document.getElementById('jseek-apply-count')
+  const goEl = document.getElementById('jseek-apply-go')
+  if (countEl) countEl.textContent = `${count} selected`
+  if (goEl) { goEl.textContent = `Apply to ${count} selected`; goEl.disabled = count === 0 || !serverUp }
+}
+
+function setQueueRunning(running) {
+  const pause = document.getElementById('jseek-apply-pause')
+  const stop = document.getElementById('jseek-apply-stop')
+  const go = document.getElementById('jseek-apply-go')
+  if (pause) pause.style.display = running ? '' : 'none'
+  if (stop) stop.style.display = running ? '' : 'none'
+  if (go) go.disabled = running || selectedJobs.size === 0
+}
+
+async function startApplyQueue() {
+  if (!selectedJobs.size || !serverUp) return
+  const jobs = [...selectedJobs.values()]
+  progressJobs.clear()
+  for (const job of jobs) { job.status = 'queued'; progressJobs.set(job.id, job) }
+  renderProgress()
+  setQueueRunning(true)
+
+  console.log('[JSeek] starting batch apply for', jobs.length, 'jobs')
+
+  const ready = []
+  for (const job of jobs) {
+    job.status = 'resolving'
+    renderProgress()
+    const card = findAll(activeCfg.jobCards).find(c => c.dataset.jseekKey === job.id)
+    const url = card ? await resolveCardApplyUrl(card) : null
+    console.log('[JSeek] resolved', job.company, '—', job.title, '→', url)
+    if (!url) {
+      job.status = 'failed'
+      job.error = card ? 'no apply link in drawer' : 'card not found'
+      renderProgress()
+      continue
+    }
+    let dup = false
+    try {
+      dup = (await callBackground('CHECK_DUPLICATE', { company: job.company, title: job.title })).duplicate
+    } catch { /* check unavailable — don't block */ }
+    if (dup) { job.status = 'duplicate'; renderProgress(); continue }
+    ready.push({ id: job.id, title: job.title, company: job.company, applyUrl: url })
+  }
+
+  if (!ready.length) { setQueueRunning(false); return }
+  const skipTailoring = document.getElementById('jseek-skip-tailor')?.checked ?? false
+  chrome.runtime.sendMessage({ type: 'START_APPLY_QUEUE', jobs: ready, policy: { skipTailoring, provider: llmProvider } })
+}
+
+function renderProgress() {
+  const box = document.getElementById('jseek-apply-progress')
+  if (!box) return
+  box.textContent = ''
+  for (const job of progressJobs.values()) {
+    const row = document.createElement('div')
+    row.className = 'jseek-prog-row'
+
+    const t = document.createElement('span')
+    t.className = 't'
+    t.textContent = job.title || job.company || job.id
+    if (job.error) t.title = job.error
+
+    const s = document.createElement('span')
+    s.className = `s ${job.status}`
+    // Surface the failure reason inline (e.g. "failed: no apply URL") so it's
+    // actionable instead of a bare "failed".
+    s.textContent = job.error ? `${job.status}: ${job.error}` : job.status
+    if (job.error) s.title = job.error
+
+    row.append(t, s)
+    box.appendChild(row)
+  }
+}
+
+function onQueueProgress(msg) {
+  for (const j of msg.jobs) {
+    const existing = progressJobs.get(j.id) ?? {}
+    progressJobs.set(j.id, { ...existing, ...j })
+  }
+  renderProgress()
+  if (msg.done) setQueueRunning(false)
+}
+
+// ─── Apply-mode flow (runs inside a queue-opened ATS tab) ────────────────────
+function reportApplyProgress(jobId, status) {
+  chrome.runtime.sendMessage({ type: 'APPLY_PROGRESS', jobId, status }).catch(() => {})
+}
+
+async function waitForForm(timeout = 15_000) {
+  const start = Date.now()
+  while (Date.now() - start < timeout) {
+    const form = findFirst('form')
+    if (form && findAll('input, select, textarea', form).length) return form
+    await sleep(500)
+  }
+  return findFirst('form')
+}
+
+function hasCoverLetterField(root = document) {
+  return findAll('input[type="file"], textarea', root).some(el => /cover.?letter/i.test(fieldDescriptor(el)))
+}
+
+async function fillCoverLetterUpload(root = document) {
+  const inputs = findAll('input[type="file"]', root)
+    .filter(el => !el.files?.length && /cover.?letter/i.test(fieldDescriptor(el)))
+  if (!inputs.length) return 0
+  const blob = await loadStoredPdf('coverLetter')
+  if (!blob) return 0
+  const file = new File([blob], 'cover_letter.pdf', { type: 'application/pdf' })
+  let filled = 0
+  for (const el of inputs) {
+    try {
+      const dt = new DataTransfer()
+      dt.items.add(file)
+      el.files = dt.files
+      el.dispatchEvent(new Event('change', { bubbles: true }))
+      filled++
+    } catch { /* DataTransfer unavailable */ }
+  }
+  return filled
+}
+
+function clickSubmit(root = document) {
+  const btn = findAll('button, input[type="submit"], a[role="button"]', root)
+    .find(el => SUBMIT_BTN_RE.test(el.textContent || el.value || '') && !NEXT_BTN_RE.test(el.textContent || ''))
+  if (!btn) return false
+  btn.scrollIntoView({ block: 'center' })
+  btn.click()
+  return true
+}
+
+async function runApplyFlow(job, policy) {
+  const cfg = activeCfg ?? detectSite()
+  const slug = cfg?.slug ?? 'universal'
+
+  reportApplyProgress(job.id, 'filling')
+  const form = await waitForForm()
+  if (!form) return { status: 'failed', error: 'no application form found' }
+
+  const jdEl = slug === 'universal' ? findUniversalElements() : findFirst(cfg.jobDescription)
+  const jd = jdEl?.innerText.trim() ?? ''
+
+  if (!policy.skipTailoring && jd) {
+    reportApplyProgress(job.id, 'tailoring')
+    try { await callEndpoint('TAILOR', { jobDescription: jd, companyName: job.company, jobTitle: job.title }, { download: false }) } catch { /* fall back to last resume */ }
+  }
+
+  if (hasCoverLetterField() && jd) {
+    reportApplyProgress(job.id, 'cover letter')
+    try { await callEndpoint('COVER_LETTER', { jd, companyName: job.company, jobTitle: job.title }, { download: false }) } catch { /* skip CL on failure */ }
+    await fillCoverLetterUpload()
+  }
+
+  reportApplyProgress(job.id, 'filling')
+  await autoFillForm()
+
+  // Safety rail: only auto-submit clean ATS; everything else (and unknown
+  // hosts) stops at review for the user to finish manually.
+  if (CLEAN_ATS.includes(slug) && clickSubmit()) return { status: 'submitted' }
+  highlightNextButton()
+  return { status: 'needs_review' }
+}
+
+// Top-level so RUN_APPLY is answered on ATS tabs and QUEUE_PROGRESS on the
+// watchlist, regardless of which site config matched.
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg.type === 'RUN_APPLY') {
+    runApplyFlow(msg.job, msg.policy)
+      .then(sendResponse)
+      .catch(err => sendResponse({ status: 'failed', error: err.message }))
+    return true
+  }
+  if (msg.type === 'QUEUE_PROGRESS') {
+    onQueueProgress(msg)
+    return false
+  }
+})
+
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 async function loadH1bData() {
   try {
@@ -717,6 +1331,8 @@ function runFeatures(cfg) {
 
   if (ATS_SLUGS.includes(cfg.slug)) injectAutoFillButton()
 
+  if (cfg.slug === 'linkedin') watchLinkedInEasyApply()
+
   if (cfg.slug === 'jseek') {
     const sidebarContainer = findFirst(cfg.filterSidebar)
     const sidebarPills = sidebarContainer
@@ -726,11 +1342,13 @@ function runFeatures(cfg) {
     injectH1bBadges()
     injectLinkedInButtons()
     injectDrawerEnhancements()
+    if (batchApplyActive) injectJobSelection(cfg)
 
     if (sidebarPills) {
       injectSeniorityFilter(sidebarPills)
       injectH1bFilter(sidebarPills)
       injectLlmToggle(sidebarPills)
+      injectBatchApplyToggle(sidebarPills)
     }
   }
 }
@@ -744,17 +1362,19 @@ async function init() {
   if (cfg.slug === 'jseek') await loadH1bData()
 
   await new Promise(resolve => {
-    chrome.storage.local.get(['llmProvider', 'profile'], ({ llmProvider: saved, profile }) => {
+    chrome.storage.local.get(['llmProvider', 'profile', 'jobStates', 'batchApplyEnabled'], ({ llmProvider: saved, profile, jobStates, batchApplyEnabled: bae }) => {
       if (saved) llmProvider = saved
       if (profile) {
         PROFILE = { ...DEFAULT_PROFILE, ...profile }
         PROFILE.fullName = `${PROFILE.firstName} ${PROFILE.lastName}`
       }
+      if (jobStates) Object.assign(JOB_STATES, jobStates)
+      if (bae !== undefined) batchApplyActive = bae
       resolve()
     })
   })
 
-  pingHealth()
+  await pingHealth()
   setInterval(pingHealth, 30_000)
 
   runFeatures(cfg)

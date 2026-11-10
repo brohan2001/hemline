@@ -3,6 +3,7 @@ import { readFileSync } from 'fs'
 import { fileURLToPath } from 'url'
 import path from 'path'
 import { JSDOM } from 'jsdom'
+import { chromeMock } from './helpers/chrome-mock.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -24,29 +25,24 @@ const PLATFORM_URLS = {
   builtin:      'https://builtin.com/job/software-engineer/12345',
   wellfound:    'https://wellfound.com/jobs/12345',
   dice:         'https://www.dice.com/job-detail/12345',
+  ashby:        'https://jobs.ashbyhq.com/acme/12345',
+  icims:        'https://careers.icims.com/jobs/12345/swe/job',
+  smartrecruiters: 'https://jobs.smartrecruiters.com/Acme/12345-swe',
+  bamboohr:     'https://acme.bamboohr.com/careers/12345',
+  jazzhr:       'https://acme.applytojob.com/apply/12345',
+  rippling:     'https://jobs.rippling.com/acme/12345',
 }
 
-function chromeMock(storageData = {}) {
-  return {
-    runtime: {
-      getURL: (p) => `chrome-extension://test/${p}`,
-      sendMessage: () => {},
-    },
-    storage: {
-      local: {
-        get: (_key, cb) => cb(storageData),
-        set: () => {},
-      },
-    },
-  }
-}
-
-async function bootContentScript(slug, storageData = {}) {
+async function bootContentScript(slug, storageData = {}, responses = {}) {
   const html = readFileSync(path.join(__dirname, `mocks/${slug}.html`), 'utf8')
   const dom = new JSDOM(html, { url: PLATFORM_URLS[slug], runScripts: 'outside-only' })
 
-  dom.window.chrome = chromeMock(storageData)
-  // Healthy /health stub so pingHealth keeps the buttons enabled.
+  dom.window.chrome = chromeMock(storageData, responses)
+  // JSDOM has no layout engine, so innerText is undefined; the click handlers read it.
+  Object.defineProperty(dom.window.HTMLElement.prototype, 'innerText', {
+    configurable: true,
+    get() { return this.textContent },
+  })
   dom.window.fetch = () => Promise.resolve({ ok: true, json: async () => ({ status: 'ok' }) })
   dom.window.alert = () => {}
 
@@ -71,7 +67,39 @@ describe('content script boots with a stored profile', () => {
   })
 })
 
-describe('content script button injection across all 12 platforms', () => {
+describe('standalone background bridge', () => {
+  it('Resume click sends TAILOR to the background and shows the match score', async () => {
+    const dom = await bootContentScript('greenhouse', {}, {
+      TAILOR: { filename: 'Jane_Doe_Resume_Acme.pdf', matchScore: 87 },
+    })
+    const row = dom.window.document.getElementById('jseek-btn-row')
+    const btn = Array.from(row.querySelectorAll('button')).find(b => b.textContent === 'Resume')
+    btn.click()
+    for (let i = 0; i < 20 && !btn.textContent.includes('87%'); i++) await new Promise(r => setTimeout(r, 10))
+    const tailor = dom.window.chrome.sent.find(m => m.op === 'TAILOR')
+    expect(tailor.payload.jobDescription.length).toBeGreaterThan(0)
+    expect(btn.textContent).toContain('87% match')
+    dom.window.close()
+  })
+
+  it('disables buttons with a setup hint until a key and resume exist', async () => {
+    const dom = await bootContentScript('greenhouse', {}, {
+      STATUS: { backend: 'extension', hasKey: false, hasResume: false },
+    })
+    const buttons = Array.from(dom.window.document.querySelectorAll('#jseek-btn-row button'))
+    expect(buttons.every(b => b.disabled)).toBe(true)
+    expect(buttons[0].title).toMatch(/add an API key/)
+    dom.window.close()
+  })
+
+  it('hides the Claude/Relay toggle unless the local server backend is selected', async () => {
+    const dom = await bootContentScript('jseek')
+    expect(dom.window.document.getElementById('jseek-llm-toggle')).toBeNull()
+    dom.window.close()
+  })
+})
+
+describe('content script button injection across all 18 platforms', () => {
   for (const slug of Object.keys(PLATFORM_URLS)) {
     it(`injects Resume, Resume & CL, Message, and Email buttons on ${slug}`, async () => {
       const dom = await bootContentScript(slug)
@@ -88,4 +116,28 @@ describe('content script button injection across all 12 platforms', () => {
       dom.window.close()
     })
   }
+})
+
+// Selection checkboxes are opt-in via the sidebar Batch Apply toggle.
+describe('batch apply selection layer (jseek watchlist)', () => {
+  it('injects a checkbox into every watchlist card and a floating apply bar', async () => {
+    const dom = await bootContentScript('jseek', { batchApplyEnabled: true })
+    const doc = dom.window.document
+
+    const cards = doc.querySelectorAll('div.relative.flex.items-center.gap-3.rounded-md.px-2.py-2[class*="[contain:layout]"]')
+    expect(cards.length).toBe(2)
+    expect(doc.querySelectorAll('.jseek-select-box input[type="checkbox"]').length).toBe(2)
+    expect(doc.getElementById('jseek-apply-bar')).not.toBeNull()
+    expect(doc.getElementById('jseek-apply-go')).not.toBeNull()
+    dom.window.close()
+  })
+
+  it('is idempotent — re-running features does not duplicate checkboxes', async () => {
+    const dom = await bootContentScript('jseek', { batchApplyEnabled: true })
+    const doc = dom.window.document
+    const card = doc.querySelector('div.relative.flex.items-center[class*="[contain:layout]"]')
+    // Each card holds exactly one checkbox even though runFeatures fires repeatedly.
+    expect(card.querySelectorAll('.jseek-select-box').length).toBe(1)
+    dom.window.close()
+  })
 })

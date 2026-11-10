@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JSeek Enhancer Privacy Policy</title>
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<main>
+<h1>Privacy Policy</h1>
+<p class="muted">JSeek Enhancer browser extension · Last updated November 10, 2026</p>
+
+<h2>Summary</h2>
+<p>JSeek Enhancer has no server and no accounts. Your data stays in your browser, except for the AI requests you trigger, which go directly from your browser to the AI provider whose API key you entered.</p>
+
+<h2>What the extension stores, and where</h2>
+<ul>
+  <li><strong>Your API keys</strong> (Anthropic, Google Gemini, Groq, Cerebras), <strong>resume</strong> (LaTeX source, project and skill pools), <strong>profile</strong> (contact, education, work-authorization and optional EEO fields you choose to fill), and <strong>application history</strong> are stored in your browser's extension storage (<code>chrome.storage.local</code> / <code>browser.storage.local</code>).</li>
+  <li>Generated resume and cover-letter PDFs are stored in the extension's IndexedDB so they can be attached to application forms.</li>
+  <li>Nothing is synced to any JSeek server, because there is none. Uninstalling the extension deletes all of it.</li>
+</ul>
+
+<h2>What leaves your browser</h2>
+<ul>
+  <li><strong>AI requests.</strong> When you click Resume, Cover Letter, Message, or Email, the extension sends your resume, the job description from the page you are viewing, and (for letters and messages) your name and the highlights you wrote, to the AI provider you configured, using your own API key. That provider's privacy policy and data-retention terms apply: <a href="https://www.anthropic.com/legal/privacy">Anthropic</a>, <a href="https://policies.google.com/privacy">Google</a>, <a href="https://groq.com/privacy-policy/">Groq</a>, <a href="https://www.cerebras.ai/privacy-policy">Cerebras</a>. Free tiers of some providers may use your inputs to improve their models; check their terms.</li>
+  <li><strong>Job feed.</strong> The job dashboard downloads a public list of job postings from this website (GitHub Pages). Like any web request, GitHub can see your IP address. No personal data is sent.</li>
+  <li><strong>Company logos</strong> on the dashboard may load from a public logo service, which receives the company domain.</li>
+  <li><strong>Auto-fill.</strong> When you use ATS auto-fill, profile fields are typed into the application form on the employer's site you are viewing, and only when you start it.</li>
+</ul>
+
+<h2>What we never do</h2>
+<ul>
+  <li>No analytics, tracking, advertising, or selling of data.</li>
+  <li>No reading of pages beyond job postings and application forms the extension supports, or other careers pages if you opt into "all websites" in settings.</li>
+  <li>LaTeX compilation happens entirely inside your browser (WebAssembly); your resume is not uploaded for PDF generation.</li>
+</ul>
+
+<h2>Optional local server</h2>
+<p>Developers can point the extension at their own JSeek server on <code>localhost</code>. In that mode requests go to that local server only.</p>
+
+<h2>Contact</h2>
+<p>Questions or deletion concerns: open an issue at <a href="https://github.com/brohan2001/resume-extension/issues">github.com/brohan2001/resume-extension</a>.</p>
+</main>
+</body>
+</html>

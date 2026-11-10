@@ -1,0 +1,9 @@
+% English-only hyphenation keeps the bundled format small.
+english		hyphen.tex
+=usenglish
+=USenglish
+=american
+=british
+=UKenglish
+dumylang	dumyhyph.tex
+nohyphenation	zerohyph.tex

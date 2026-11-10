@@ -3,412 +3,604 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>JSeek Enhancer Dashboard</title>
+<title>job-seek</title>
 <style>
+  :root {
+    --bg: #0f1117; --surface: #181b26; --surface2: #1e2130; --border: #252836;
+    --text: #e2e8f0; --muted: #64748b; --muted2: #4a5568; --accent: #6366f1;
+    --green: #22c55e; --yellow: #eab308; --red: #ef4444; --blue: #3b82f6;
+  }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    background: #f9fafb;
-    color: #111827;
-    height: 100vh;
-    display: grid;
-    grid-template-columns: 420px 1fr;
-    overflow: hidden;
-  }
-  .col-left { border-right: 1px solid #e5e7eb; display: flex; flex-direction: column; overflow: hidden; background: #fff; }
-  .col-left-header { padding: 14px 14px 10px; border-bottom: 1px solid #e5e7eb; flex-shrink: 0; }
-  .stream-controls { display: flex; gap: 8px; align-items: center; }
-  .stream-controls input { flex: 1; }
-  #stream-status { font-size: 11px; color: #6b7280; margin-top: 6px; }
-  .job-stream { flex: 1; overflow-y: auto; padding: 8px; background: #f9fafb; }
-  .job-card { padding: 10px 12px; border: 1px solid #e5e7eb; border-radius: 6px; margin-bottom: 8px; cursor: pointer; background: #fff; transition: border-color 0.15s, background 0.15s; }
-  .job-card:hover { border-color: #3b82f6; background: #eff6ff; }
-  .job-card.selected { border-color: #1d4ed8; background: #dbeafe; }
-  .job-card-title { font-size: 13px; font-weight: 600; color: #111827; }
-  .job-card-company { font-size: 12px; color: #374151; margin-top: 2px; }
-  .job-card-meta { font-size: 11px; color: #6b7280; margin-top: 2px; }
-  .col-right { overflow-y: auto; padding: 32px 24px; }
-  .col-right-inner { max-width: 720px; }
-  h1 { font-size: 20px; margin-bottom: 4px; }
-  .sub { font-size: 13px; color: #6b7280; margin-bottom: 24px; }
-  label { display: block; font-size: 12px; font-weight: 600; color: #374151; margin: 14px 0 4px; }
-  input, textarea {
-    width: 100%;
-    padding: 8px 10px;
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
-    font-size: 13px;
-    font-family: inherit;
-    background: #fff;
-  }
-  textarea { resize: vertical; }
-  #jd { min-height: 180px; }
-  .row { display: flex; gap: 12px; }
-  .row > div { flex: 1; }
-  .actions { display: flex; gap: 8px; margin-top: 18px; flex-wrap: wrap; align-items: center; }
-  button {
-    padding: 9px 16px;
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
-    background: #fff;
-    font-size: 13px;
-    font-weight: 600;
-    color: #374151;
-    cursor: pointer;
-    transition: background 0.15s;
-  }
-  button:hover:not(:disabled) { background: #f3f4f6; }
-  button:disabled { opacity: 0.5; cursor: not-allowed; }
-  button.primary { background: #1d4ed8; border-color: #1d4ed8; color: #fff; }
-  button.primary:hover:not(:disabled) { background: #1e40af; }
-  #timer { font-size: 13px; font-weight: 600; color: #1d4ed8; min-width: 90px; }
-  #status { font-size: 12px; color: #6b7280; margin-top: 10px; min-height: 16px; }
-  #status.error { color: #b91c1c; }
-  #message-wrap { display: none; margin-top: 18px; }
-  #message { min-height: 100px; }
-  #copy-btn { margin-top: 8px; }
+  body { background: var(--bg); color: var(--text); font-family: 'Inter', system-ui, -apple-system, sans-serif; font-size: 14px; line-height: 1.5; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+  a { color: var(--accent); text-decoration: none; }
+  button { font-family: inherit; }
 
-  .panel { margin-top: 32px; border-top: 1px solid #e5e7eb; padding-top: 18px; }
-  .panel h2 { font-size: 15px; margin-bottom: 10px; }
-  .panel-bar { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
-  .panel-bar input { flex: 1; }
+  /* Header */
+  .header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 11px 22px; display: flex; align-items: center; gap: 16px; flex-shrink: 0; }
+  .brand { font-size: 16px; font-weight: 800; letter-spacing: -.02em; display: flex; align-items: center; gap: 8px; }
+  .live-dot { width: 7px; height: 7px; background: var(--green); border-radius: 50%; animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+  .header-meta { font-size: 12px; color: var(--muted); }
+  .spacer { flex: 1; }
+  .health { font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 5px; }
+  .hlink { font-size: 12px; color: var(--muted); cursor: pointer; padding: 4px 8px; border-radius: 5px; }
+  .hlink:hover { color: var(--text); background: var(--surface2); }
+  .refresh-btn { background: var(--accent); color: #fff; border: none; padding: 6px 13px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px; }
+  .refresh-btn:disabled { opacity: .5; cursor: default; }
+  .spinner { width: 11px; height: 11px; border: 2px solid #ffffff44; border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Watchlist title */
+  .wl-head { background: var(--bg); padding: 16px 24px 6px; display: flex; align-items: baseline; gap: 12px; flex-shrink: 0; }
+  .wl-title { font-size: 17px; font-weight: 700; }
+  .wl-handle { font-size: 12px; color: var(--muted); }
+
+  /* Filter bar */
+  .filter-bar { background: var(--bg); padding: 8px 24px 10px; display: flex; align-items: center; gap: 7px; flex-wrap: wrap; flex-shrink: 0; position: relative; z-index: 50; border-bottom: 1px solid var(--border); }
+  .filter-label { font-size: 11px; color: var(--muted); margin-right: 2px; }
+  .chip-wrap { position: relative; }
+  .chip { display: flex; align-items: center; gap: 5px; padding: 4px 11px; border-radius: 99px; border: 1px dashed var(--border); background: transparent; color: var(--muted); font-size: 11px; cursor: pointer; transition: all .12s; white-space: nowrap; user-select: none; }
+  .chip:hover { border-color: var(--muted2); color: var(--text); }
+  .chip.active, .chip.open { border-color: var(--accent); color: var(--accent); background: #6366f10d; border-style: solid; }
+  .chip-chevron { font-size: 9px; transition: transform .12s; }
+  .chip.open .chip-chevron { transform: rotate(180deg); }
+  .dropdown { position: absolute; top: calc(100% + 5px); left: 0; background: var(--surface2); border: 1px solid var(--border); border-radius: 9px; min-width: 175px; box-shadow: 0 8px 24px #00000077; z-index: 200; display: none; overflow: hidden; max-height: 320px; overflow-y: auto; }
+  .dropdown.open { display: block; }
+  .ditem { display: flex; align-items: center; gap: 8px; padding: 8px 13px; font-size: 12px; color: var(--text); cursor: pointer; }
+  .ditem:hover { background: #6366f10f; }
+  .ditem.selected { color: var(--accent); font-weight: 600; }
+  .check { width: 14px; height: 14px; border-radius: 50%; border: 1.5px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 9px; flex-shrink: 0; }
+  .ditem.selected .check { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .search-box { margin-left: auto; }
+  .search-box input { background: var(--surface2); border: 1px solid var(--border); border-radius: 99px; color: var(--text); font-size: 12px; padding: 5px 13px; width: 200px; outline: none; }
+  .search-box input:focus { border-color: var(--accent); }
+
+  /* Sub-line */
+  .subline { font-size: 11px; color: var(--muted2); padding: 7px 24px; display: flex; justify-content: space-between; flex-shrink: 0; }
+  .subline strong { color: var(--text); }
+
+  /* Main */
+  .main { display: flex; flex: 1; overflow: hidden; }
+  .list-wrap { flex: 1; overflow-y: auto; min-width: 0; }
+  .list-wrap::-webkit-scrollbar { width: 5px; }
+  .list-wrap::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .divider { display: flex; align-items: center; gap: 12px; padding: 15px 24px 5px; }
+  .divider-line { flex: 1; height: 1px; background: var(--border); }
+  .divider-label { font-size: 10px; font-weight: 700; color: var(--muted); letter-spacing: .1em; }
+
+  .row { display: flex; align-items: center; gap: 10px; padding: 9px 24px; cursor: pointer; transition: background .1s; user-select: none; }
+  .row:hover { background: var(--surface); }
+  .row.active { background: var(--surface2); }
+  .row-radio { width: 13px; height: 13px; border-radius: 50%; border: 1.5px solid var(--muted2); flex-shrink: 0; }
+  .row:hover .row-radio, .row.active .row-radio { border-color: var(--accent); }
+  .row.active .row-radio { background: var(--accent); }
+  .logo { width: 26px; height: 26px; border-radius: 6px; flex-shrink: 0; object-fit: contain; background: #fff; }
+  .logo-fallback { width: 26px; height: 26px; border-radius: 6px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 11px; color: #fff; }
+  .row-company { font-size: 12px; color: var(--muted); white-space: nowrap; flex-shrink: 0; max-width: 130px; overflow: hidden; text-overflow: ellipsis; }
+  .h1b-badge { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 99px; flex-shrink: 0; white-space: nowrap; }
+  .h1b-hi { background: #16a34a22; color: var(--green); border: 1px solid #16a34a44; }
+  .h1b-lo { background: #eab30818; color: var(--yellow); border: 1px solid #eab30844; }
+  .row-title { flex: 1; font-size: 13px; font-weight: 500; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .row-score { font-size: 10px; font-weight: 700; color: var(--accent); background: #6366f114; padding: 1px 7px; border-radius: 99px; flex-shrink: 0; }
+  .row-time { font-size: 11px; color: var(--muted); min-width: 32px; text-align: right; flex-shrink: 0; }
+  .row-time.fresh { color: var(--green); }
+  .row-time.recent { color: var(--yellow); }
+
+  .load-more { padding: 18px 24px 30px; text-align: center; }
+  .load-more button { background: transparent; border: 1px solid var(--border); color: var(--muted); padding: 8px 22px; border-radius: 7px; font-size: 12px; cursor: pointer; }
+  .load-more button:hover { border-color: var(--accent); color: var(--accent); }
+  .empty { padding: 60px 24px; text-align: center; color: var(--muted); }
+
+  /* Detail panel */
+  .panel { width: 0; flex-shrink: 0; overflow: hidden; border-left: 1px solid transparent; transition: width .2s ease, border-color .2s ease; }
+  .panel.open { width: 460px; border-color: var(--border); }
+  .panel-inner { width: 460px; display: flex; flex-direction: column; height: 100%; }
+  .panel-head { display: flex; align-items: center; gap: 10px; padding: 14px 18px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .panel-logo { width: 34px; height: 34px; border-radius: 8px; object-fit: contain; background: #fff; flex-shrink: 0; }
+  .panel-logo-fb { width: 34px; height: 34px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; color: #fff; flex-shrink: 0; }
+  .panel-co { font-size: 14px; font-weight: 600; }
+  .panel-co-meta { font-size: 11px; color: var(--muted); }
+  .view-btn { background: var(--text); color: var(--bg); border: none; padding: 6px 13px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
+  .panel-close { background: transparent; border: none; color: var(--muted); font-size: 18px; cursor: pointer; padding: 2px 6px; }
+  .panel-body { flex: 1; overflow-y: auto; padding: 18px; }
+  .panel-body::-webkit-scrollbar { width: 5px; }
+  .panel-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  .panel-title { font-size: 19px; font-weight: 700; line-height: 1.3; margin-bottom: 10px; }
+  .badges { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+  .badge { font-size: 11px; font-weight: 500; padding: 3px 9px; border-radius: 6px; }
+  .b-visa-yes { background: #16a34a18; color: var(--green); border: 1px solid #16a34a44; }
+  .b-visa-no { background: #dc262618; color: var(--red); border: 1px solid #dc262644; }
+  .b-visa-unk { background: #eab30818; color: var(--yellow); border: 1px solid #eab30844; }
+  .b-role { background: #6366f118; color: #a5b4fc; border: 1px solid #6366f144; }
+  .b-level { background: #37415133; color: var(--text); border: 1px solid #37415155; }
+  .b-loc { background: #1e293b; color: var(--muted); border: 1px solid var(--border); }
+
+  .actions { display: flex; gap: 7px; flex-wrap: wrap; margin-bottom: 8px; }
+  .act-btn { flex: 1; min-width: 100px; background: var(--accent); color: #fff; border: none; padding: 8px 10px; border-radius: 7px; font-size: 12px; font-weight: 600; cursor: pointer; }
+  .act-btn.sec { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+  .act-btn:disabled { opacity: .5; cursor: default; }
+  .status { font-size: 11px; color: var(--muted); min-height: 16px; margin-bottom: 12px; }
+  .status.error { color: var(--red); }
+  .status .timer { color: var(--accent); font-weight: 600; }
+
+  .msg-wrap { margin-bottom: 14px; display: none; }
+  .msg-wrap textarea { width: 100%; min-height: 90px; background: var(--surface2); border: 1px solid var(--border); border-radius: 7px; color: var(--text); font-size: 12px; padding: 9px; resize: vertical; font-family: inherit; }
+  .copy-btn { margin-top: 6px; background: var(--surface2); border: 1px solid var(--border); color: var(--text); padding: 5px 12px; border-radius: 6px; font-size: 11px; cursor: pointer; }
+
+  .desc-toggle { display: flex; align-items: center; justify-content: space-between; background: var(--surface2); border: 1px solid var(--border); border-radius: 7px; padding: 9px 13px; cursor: pointer; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 12px; }
+  .desc-toggle:hover { color: var(--text); }
+  .desc { font-size: 13px; color: var(--text); line-height: 1.7; display: none; }
+  .desc.open { display: block; }
+  .desc h1,.desc h2,.desc h3 { font-size: 14px; font-weight: 700; margin: 12px 0 6px; }
+  .desc ul,.desc ol { padding-left: 18px; margin: 6px 0; }
+  .desc li { margin-bottom: 3px; }
+  .desc p { margin-bottom: 8px; }
+  .desc a { color: var(--accent); }
+
+  .score-strip { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); }
+  .sitem { display: flex; flex-direction: column; align-items: center; background: #0f111733; border: 1px solid var(--border); border-radius: 5px; padding: 5px 9px; min-width: 56px; }
+  .sitem .pts { font-size: 14px; font-weight: 700; color: var(--accent); }
+  .sitem .max { font-size: 9px; color: var(--muted2); }
+  .sitem .lbl { font-size: 9px; color: var(--muted); text-transform: uppercase; margin-top: 1px; }
+
+  /* Modal */
+  .modal-bg { position: fixed; inset: 0; background: #000a; z-index: 500; display: none; align-items: center; justify-content: center; }
+  .modal-bg.open { display: flex; }
+  .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; width: 720px; max-width: 92vw; max-height: 85vh; overflow: hidden; display: flex; flex-direction: column; }
+  .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--border); }
+  .modal-head h3 { font-size: 14px; }
+  .modal-body { overflow-y: auto; padding: 14px 18px; }
   table { width: 100%; border-collapse: collapse; font-size: 12px; }
-  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #f3f4f6; }
-  th { color: #6b7280; font-weight: 600; }
-  .count-badge { font-size: 12px; color: #6b7280; font-weight: 400; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 600; }
+  .mini-input { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 5px 10px; font-size: 12px; outline: none; }
+  .csv-btn { background: var(--accent); color: #fff; border: none; padding: 5px 12px; border-radius: 6px; font-size: 11px; cursor: pointer; }
+
+  .toast { position: fixed; bottom: 20px; right: 20px; background: var(--surface2); border: 1px solid var(--border); border-radius: 7px; padding: 10px 16px; font-size: 12px; box-shadow: 0 4px 20px #00000055; z-index: 999; opacity: 0; transition: opacity .3s; pointer-events: none; }
+  .toast.show { opacity: 1; }
 </style>
 </head>
 <body>
-  <div class="col-left">
-    <div class="col-left-header">
-      <div class="stream-controls">
-        <input id="job-filter" placeholder="Filter jobs by keyword…">
-        <button id="refresh-jobs">Refresh</button>
+
+<div class="header">
+  <div class="brand">&lt;job-seek&gt;<span class="live-dot"></span></div>
+  <span class="header-meta" id="last-refreshed">Loading…</span>
+  <div class="spacer"></div>
+  <span class="health" id="health-line"></span>
+  <span class="hlink" id="open-apps">Applied</span>
+  <span class="hlink" id="open-stats">Stats</span>
+  <button class="refresh-btn" id="refresh-btn"><span id="refresh-icon"></span>Refresh</button>
+</div>
+
+<div class="wl-head">
+  <span class="wl-title">United States · Software / ML Engineer</span>
+  <span class="wl-handle">@rohan-balasubramanian</span>
+</div>
+
+<div class="filter-bar" id="filter-bar">
+  <span class="filter-label">⚙ Filters</span>
+
+  <div class="chip-wrap">
+    <div class="chip" data-chip="location"><span>◎</span><span id="lbl-location">US &amp; Remote</span><span class="chip-chevron">▾</span></div>
+    <div class="dropdown" id="dd-location">
+      <div class="ditem" data-val="all"><span class="check"></span>All Locations</div>
+      <div class="ditem selected" data-val="us"><span class="check">✓</span>US &amp; Remote</div>
+    </div>
+  </div>
+
+  <div class="chip-wrap">
+    <div class="chip" data-chip="role"><span>⊞</span><span id="lbl-role">Role</span><span class="chip-chevron">▾</span></div>
+    <div class="dropdown" id="dd-role">
+      <div class="ditem selected" data-val="all"><span class="check">✓</span>All Roles</div>
+      <div class="ditem" data-val="backend"><span class="check"></span>Backend</div>
+      <div class="ditem" data-val="frontend"><span class="check"></span>Frontend</div>
+      <div class="ditem" data-val="fullstack"><span class="check"></span>Fullstack</div>
+      <div class="ditem" data-val="cloud"><span class="check"></span>Cloud / DevOps</div>
+      <div class="ditem" data-val="ml"><span class="check"></span>ML / AI</div>
+      <div class="ditem" data-val="ds"><span class="check"></span>Data</div>
+      <div class="ditem" data-val="mobile"><span class="check"></span>Mobile</div>
+      <div class="ditem" data-val="network"><span class="check"></span>Network</div>
+    </div>
+  </div>
+
+  <div class="chip-wrap">
+    <div class="chip" data-chip="level"><span>▦</span><span id="lbl-level">Level</span><span class="chip-chevron">▾</span></div>
+    <div class="dropdown" id="dd-level">
+      <div class="ditem selected" data-val="all"><span class="check">✓</span>All Levels</div>
+      <div class="ditem" data-val="intern"><span class="check"></span>Intern</div>
+      <div class="ditem" data-val="entry"><span class="check"></span>Entry / New Grad</div>
+      <div class="ditem" data-val="mid"><span class="check"></span>Mid</div>
+      <div class="ditem" data-val="senior"><span class="check"></span>Senior</div>
+      <div class="ditem" data-val="staff"><span class="check"></span>Staff</div>
+      <div class="ditem" data-val="lead"><span class="check"></span>Lead+</div>
+    </div>
+  </div>
+
+  <div class="chip-wrap">
+    <div class="chip" data-chip="workMode"><span>⌂</span><span id="lbl-workMode">Work Mode</span><span class="chip-chevron">▾</span></div>
+    <div class="dropdown" id="dd-workMode">
+      <div class="ditem selected" data-val="any"><span class="check">✓</span>Any Mode</div>
+      <div class="ditem" data-val="remote"><span class="check"></span>Remote</div>
+      <div class="ditem" data-val="onsite"><span class="check"></span>On-site</div>
+    </div>
+  </div>
+
+  <div class="chip" id="toggle-h1b">⊛ H1-B Sponsors Only</div>
+  <div class="chip" id="toggle-early">★ Early Career</div>
+
+  <div class="search-box"><input id="search" placeholder="Search title, company…"></div>
+</div>
+
+<div class="subline">
+  <span id="showing">Loading jobs…</span>
+  <span><strong id="active-count">—</strong> active</span>
+</div>
+
+<div class="main">
+  <div class="list-wrap" id="list-wrap">
+    <div class="empty" id="empty" style="display:none"><h3>No jobs match these filters</h3><p>Try clearing a filter or hit Refresh.</p></div>
+    <div id="job-list"></div>
+    <div class="load-more" id="load-more" style="display:none"><button id="load-more-btn">Load more</button></div>
+  </div>
+
+  <div class="panel" id="panel">
+    <div class="panel-inner">
+      <div class="panel-head">
+        <span id="panel-logo-slot"></span>
+        <div style="min-width:0;flex:1">
+          <div class="panel-co" id="panel-co"></div>
+          <div class="panel-co-meta" id="panel-co-meta"></div>
+        </div>
+        <button class="view-btn" id="panel-view">View ↗</button>
+        <button class="panel-close" id="panel-close">×</button>
       </div>
-      <p id="stream-status"></p>
-    </div>
-    <div class="job-stream" id="job-stream"></div>
-  </div>
-  <div class="col-right">
-    <div class="col-right-inner">
-  <h1>JSeek Enhancer</h1>
-  <p class="sub">Local dashboard — paste a job description, generate tailored documents.</p>
-  <p class="sub" id="health-line"></p>
-
-  <label for="jd">Job Description</label>
-  <textarea id="jd" placeholder="Paste the raw job description here…"></textarea>
-
-  <div class="row">
-    <div>
-      <label for="company">Company Name</label>
-      <input id="company" placeholder="e.g. Anthropic">
-    </div>
-    <div>
-      <label for="title">Job Title</label>
-      <input id="title" placeholder="e.g. Software Engineer">
+      <div class="panel-body">
+        <div class="panel-title" id="panel-title"></div>
+        <div class="badges" id="panel-badges"></div>
+        <div class="actions">
+          <button class="act-btn" id="btn-resume">Resume</button>
+          <button class="act-btn" id="btn-cl">Resume &amp; CL</button>
+          <button class="act-btn sec" id="btn-msg">Message</button>
+          <button class="act-btn sec" id="btn-email">Email</button>
+        </div>
+        <div class="status" id="status"><span id="timer"></span></div>
+        <div class="msg-wrap" id="msg-wrap">
+          <textarea id="message" readonly></textarea>
+          <button class="copy-btn" id="copy-btn">Copy to Clipboard</button>
+        </div>
+        <div class="desc-toggle" id="desc-toggle"><span>Job Description</span><span id="desc-chevron">▾</span></div>
+        <div class="desc" id="panel-desc"></div>
+        <div class="score-strip" id="score-strip"></div>
+      </div>
     </div>
   </div>
+</div>
 
-  <div class="actions">
-    <button id="btn-resume" class="primary">Tailor Resume</button>
-    <button id="btn-cl">Tailor Cover Letter</button>
-    <button id="btn-msg">Generate Cold Message</button>
-    <span id="timer"></span>
-  </div>
-  <p id="status"></p>
-
-  <div id="message-wrap">
-    <label for="message">Cold Message</label>
-    <textarea id="message" readonly></textarea>
-    <button id="copy-btn">Copy to Clipboard</button>
-  </div>
-
-  <div class="panel">
-    <h2>Applications <span id="app-count" class="count-badge"></span></h2>
-    <div class="panel-bar">
-      <input id="app-filter" placeholder="Filter by company or title…">
-      <button id="export-csv">Export CSV</button>
+<!-- Applications modal -->
+<div class="modal-bg" id="apps-modal">
+  <div class="modal">
+    <div class="modal-head">
+      <h3>Applications <span id="app-count" style="color:var(--muted)"></span></h3>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input class="mini-input" id="app-filter" placeholder="Filter…">
+        <button class="csv-btn" id="export-csv">Export CSV</button>
+        <button class="panel-close" data-close="apps-modal">×</button>
+      </div>
     </div>
-    <table id="app-table">
-      <thead><tr><th>Date</th><th>Company</th><th>Title</th><th>Resume</th><th>CL</th></tr></thead>
-      <tbody></tbody>
-    </table>
-  </div>
-
-  <div class="panel" id="stats-panel" style="display:none">
-    <h2>Stats</h2>
-    <p class="sub" id="stats-cards"></p>
-    <table id="stats-models">
-      <thead><tr><th>Model</th><th>✓</th><th>✗</th></tr></thead>
-      <tbody></tbody>
-    </table>
-  </div>
+    <div class="modal-body">
+      <table id="app-table"><thead><tr><th>Date</th><th>Company</th><th>Title</th><th>Resume</th><th>CL</th></tr></thead><tbody></tbody></table>
     </div>
   </div>
+</div>
+
+<!-- Stats modal -->
+<div class="modal-bg" id="stats-modal">
+  <div class="modal">
+    <div class="modal-head"><h3>Pipeline Stats</h3><button class="panel-close" data-close="stats-modal">×</button></div>
+    <div class="modal-body">
+      <div id="stats-cards" style="font-size:12px;color:var(--muted);margin-bottom:14px"></div>
+      <table id="stats-models"><thead><tr><th>Model</th><th>Success</th><th>Fail</th></tr></thead><tbody></tbody></table>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
 
 <script>
   const $ = id => document.getElementById(id)
-  const buttons = ['btn-resume', 'btn-cl', 'btn-msg'].map($)
+  const LOGO_COLORS = ['#6366f1','#8b5cf6','#ec4899','#f59e0b','#10b981','#3b82f6','#ef4444','#14b8a6']
+  const colorFor = s => LOGO_COLORS[[...(s||'?')].reduce((a,c)=>a+c.charCodeAt(0),0) % LOGO_COLORS.length]
+  const initials = n => (n||'?').split(/\s+/).slice(0,2).map(w=>w[0]).join('').toUpperCase()
 
+  function logoHtml(domain, name, cls) {
+    const fb = `<div class="${cls}-fallback" style="background:${colorFor(name)}">${escHtml(initials(name))}</div>`
+    if (!domain) return fb
+    return `<img class="${cls}" src="https://logo.clearbit.com/${escHtml(domain)}" alt="" onerror="this.outerHTML='${fb.replace(/'/g,"\\'")}'">`
+  }
+
+  function escHtml(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') }
+
+  function timeAgo(iso) {
+    if (!iso) return ''
+    const ms = Date.now() - Date.parse(iso)
+    if (Number.isNaN(ms)) return ''
+    const h = ms / 36e5
+    if (h < 1) return { t: Math.max(1, Math.round(ms/6e4)) + 'm', c: 'fresh' }
+    if (h < 24) return { t: Math.round(h) + 'h', c: 'recent' }
+    const d = Math.round(h/24)
+    if (d < 30) return { t: d + 'd', c: '' }
+    return { t: Math.round(d/30) + 'mo', c: '' }
+  }
+  function bucket(iso) {
+    const d = (Date.now() - Date.parse(iso)) / 36e5
+    if (Number.isNaN(d)) return 'EARLIER'
+    if (d < 24) return 'TODAY'
+    if (d < 48) return 'YESTERDAY'
+    if (d < 24*7) return 'THIS WEEK'
+    return 'EARLIER'
+  }
+
+  // ── State ──
+  const filters = { location: 'us', role: 'all', level: 'all', workMode: 'any', h1bOnly: false, earlyOnly: false, q: '' }
+  let offset = 0, limit = 100, total = 0, jobs = [], selected = null
+
+  // ── Job list ──
+  function buildQuery() {
+    const p = new URLSearchParams()
+    if (filters.location !== 'all') p.set('location', filters.location)
+    if (filters.role !== 'all') p.set('role', filters.role)
+    if (filters.level !== 'all') p.set('level', filters.level)
+    if (filters.workMode !== 'any') p.set('workMode', filters.workMode)
+    if (filters.h1bOnly) p.set('h1bOnly', '1')
+    if (filters.earlyOnly) p.set('earlyOnly', '1')
+    if (filters.q) p.set('q', filters.q)
+    p.set('offset', offset); p.set('limit', limit)
+    return p.toString()
+  }
+
+  async function loadJobs(reset = true) {
+    if (reset) { offset = 0; jobs = [] }
+    try {
+      const data = await (await fetch('/api/jobs?' + buildQuery())).json()
+      total = data.total ?? 0
+      jobs = reset ? (data.jobs ?? []) : jobs.concat(data.jobs ?? [])
+      $('active-count').textContent = (data.total ?? 0).toLocaleString()
+      $('last-refreshed').textContent = data.lastRefreshed
+        ? 'Updated ' + new Date(data.lastRefreshed).toLocaleTimeString()
+        : (data.refreshing ? 'Building stream…' : 'No data yet')
+      if (data.refreshing && jobs.length === 0) setTimeout(() => loadJobs(true), 4000)
+      renderJobs()
+    } catch {
+      $('showing').textContent = 'Failed to load — is the server up?'
+    }
+  }
+
+  function renderJobs() {
+    const list = $('job-list')
+    list.innerHTML = ''
+    $('showing').textContent = `Showing ${jobs.length.toLocaleString()} of ${total.toLocaleString()} jobs`
+    $('empty').style.display = jobs.length ? 'none' : 'block'
+    let lastBucket = null
+    for (const j of jobs) {
+      const b = bucket(j.postedAt)
+      if (b !== lastBucket) {
+        lastBucket = b
+        const div = document.createElement('div')
+        div.className = 'divider'
+        div.innerHTML = `<span class="divider-label">${b}</span><div class="divider-line"></div>`
+        list.appendChild(div)
+      }
+      const ta = timeAgo(j.postedAt) || { t: '', c: '' }
+      const h1b = j.h1b != null
+        ? `<span class="h1b-badge ${j.h1b >= 50 ? 'h1b-hi' : 'h1b-lo'}">H1-B ${j.h1b}</span>` : ''
+      const row = document.createElement('div')
+      row.className = 'row' + (selected?.id === j.id ? ' active' : '')
+      row.dataset.id = j.id
+      row.innerHTML = `
+        <div class="row-radio"></div>
+        ${logoHtml(j.companyDomain, j.company, 'logo')}
+        <span class="row-company">${escHtml(j.company)}</span>
+        ${h1b}
+        <span class="row-title">${escHtml(j.title)}</span>
+        <span class="row-score">${j.score}</span>
+        <span class="row-time ${ta.c}">${ta.t}</span>`
+      row.addEventListener('click', () => selectJob(j.id))
+      list.appendChild(row)
+    }
+    $('load-more').style.display = jobs.length < total ? 'block' : 'none'
+  }
+
+  // ── Detail panel ──
+  async function selectJob(id) {
+    document.querySelectorAll('.row.active').forEach(r => r.classList.remove('active'))
+    document.querySelector(`.row[data-id="${CSS.escape(id)}"]`)?.classList.add('active')
+    let job
+    try { job = await (await fetch('/api/job/' + encodeURIComponent(id))).json() } catch { return }
+    if (job.error) return
+    selected = job
+    $('panel').classList.add('open')
+    $('panel-logo-slot').innerHTML = logoHtml(job.companyDomain, job.company, 'panel-logo')
+    $('panel-co').textContent = job.company
+    $('panel-co-meta').textContent = [job.location, job.source].filter(Boolean).join(' · ')
+    $('panel-title').textContent = job.title
+    $('panel-view').onclick = () => window.open(job.url, '_blank')
+
+    const visaBadge = job.visa === 1 ? '<span class="badge b-visa-yes">✓ Sponsors visa</span>'
+      : job.visa === -1 ? '<span class="badge b-visa-no">✕ No sponsorship</span>'
+      : '<span class="badge b-visa-unk">? Visa unknown</span>'
+    $('panel-badges').innerHTML = visaBadge
+      + `<span class="badge b-role">${escHtml(job.role)}</span>`
+      + `<span class="badge b-level">${escHtml(job.level)}</span>`
+      + (job.location ? `<span class="badge b-loc">${escHtml(job.location)}</span>` : '')
+
+    $('panel-desc').innerHTML = job.description || '<em>No description</em>'
+    $('panel-desc').classList.remove('open')
+    $('desc-chevron').textContent = '▾'
+    const s = job.scores
+    $('score-strip').innerHTML = [['skill',s.skill,35],['role',s.role,25],['visa',s.visa,20],['recency',s.recency,10],['company',s.company,10],['total',s.total,100]]
+      .map(([l,p,m]) => `<div class="sitem"><span class="pts">${p}</span><span class="max">/${m}</span><span class="lbl">${l}</span></div>`).join('')
+    setStatus(''); $('msg-wrap').style.display = 'none'
+  }
+
+  $('panel-close').addEventListener('click', () => { $('panel').classList.remove('open'); selected = null; document.querySelectorAll('.row.active').forEach(r => r.classList.remove('active')) })
+  $('desc-toggle').addEventListener('click', () => {
+    const d = $('panel-desc'); d.classList.toggle('open')
+    $('desc-chevron').textContent = d.classList.contains('open') ? '▴' : '▾'
+  })
+
+  // ── Tailor actions (operate on the selected job) ──
+  const actButtons = ['btn-resume','btn-cl','btn-msg','btn-email'].map($)
   let timerInterval = null
-  function startTimer() {
-    const t0 = performance.now()
-    timerInterval = setInterval(() => {
-      $('timer').textContent = ((performance.now() - t0) / 1000).toFixed(1) + 's'
-    }, 100)
-    return t0
-  }
-  function stopTimer(t0) {
-    clearInterval(timerInterval)
-    const elapsed = ((performance.now() - t0) / 1000).toFixed(1)
-    $('timer').textContent = elapsed + 's'
-    return elapsed
-  }
+  function startTimer() { const t0 = performance.now(); timerInterval = setInterval(() => { $('timer').textContent = ' ' + ((performance.now()-t0)/1000).toFixed(1) + 's' }, 100); return t0 }
+  function stopTimer(t0) { clearInterval(timerInterval); const e = ((performance.now()-t0)/1000).toFixed(1); $('timer').textContent = ' ' + e + 's'; return e }
+  function setBusy(b) { actButtons.forEach(x => x.disabled = b) }
+  function setStatus(t, err=false) { $('status').className = 'status' + (err?' error':''); $('status').innerHTML = escHtml(t) + '<span class="timer" id="timer"></span>' }
 
-  function setBusy(busy) {
-    buttons.forEach(b => { b.disabled = busy })
+  function jobInputs() {
+    const tmp = document.createElement('div'); tmp.innerHTML = selected.description || ''
+    return { jd: (tmp.textContent || '').trim(), companyName: selected.company, jobTitle: selected.title }
   }
-
-  function inputs() {
-    return {
-      jd: $('jd').value.trim(),
-      companyName: $('company').value.trim(),
-      jobTitle: $('title').value.trim(),
-    }
-  }
-
-  function setStatus(text, isError = false) {
-    $('status').textContent = text
-    $('status').className = isError ? 'error' : ''
-  }
-
   async function post(endpoint, payload) {
-    const resp = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    })
-    if (!resp.ok) {
-      const err = await resp.json().catch(() => ({ error: resp.statusText }))
-      let msg = err.error ?? resp.statusText
-      if (err.latexError) msg += ` — LaTeX: ${err.latexError.message}${err.latexError.line ? ` (line ${err.latexError.line})` : ''}`
-      throw new Error(msg)
-    }
+    const resp = await fetch(endpoint, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) })
+    if (!resp.ok) { const e = await resp.json().catch(()=>({error:resp.statusText})); let m = e.error ?? resp.statusText; if (e.latexError) m += ` — LaTeX: ${e.latexError.message}${e.latexError.line?` (line ${e.latexError.line})`:''}`; throw new Error(m) }
     return resp
   }
+  function downloadBlob(blob, name) { const u = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = u; a.download = name; a.click(); URL.revokeObjectURL(u) }
+  const safeName = n => (n||'Company').replace(/[^a-zA-Z0-9\-]/g,'_').replace(/_+/g,'_')
 
-  function downloadBlob(blob, filename) {
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = filename
-    a.click()
-    URL.revokeObjectURL(url)
-  }
-
-  function safeName(name) {
-    return (name || 'Company').replace(/[^a-zA-Z0-9\-]/g, '_').replace(/_+/g, '_')
-  }
-
-  async function confirmNotDuplicate(companyName, jobTitle) {
-    if (!companyName) return true
-    try {
-      const r = await fetch(`/applications/check?company=${encodeURIComponent(companyName)}&title=${encodeURIComponent(jobTitle)}`)
-      const d = await r.json()
-      if (d.duplicate) return window.confirm(`Already applied to ${companyName} on ${d.lastDate} (${d.timesApplied}x in the last 30 days). Generate anyway?`)
-    } catch { /* check unavailable — never block */ }
+  async function confirmNotDup(company, title) {
+    if (!company) return true
+    try { const d = await (await fetch(`/applications/check?company=${encodeURIComponent(company)}&title=${encodeURIComponent(title)}`)).json()
+      if (d.duplicate) return confirm(`Already applied to ${company} on ${d.lastDate} (${d.timesApplied}x in 30 days). Generate anyway?`)
+    } catch {}
     return true
   }
 
-  async function runPdf(endpoint, payloadKey, prefix) {
-    const { jd, companyName, jobTitle } = inputs()
-    if (!jd) { setStatus('Paste a job description first.', true); return }
-    if (!(await confirmNotDuplicate(companyName, jobTitle))) return
-    setBusy(true)
-    setStatus('Generating…')
-    const t0 = startTimer()
+  async function runPdf(endpoint, key, prefix) {
+    if (!selected) return
+    const { jd, companyName, jobTitle } = jobInputs()
+    if (!jd) { setStatus('No job description available.', true); return }
+    if (!(await confirmNotDup(companyName, jobTitle))) return
+    setBusy(true); setStatus('Generating…'); const t0 = startTimer()
     try {
-      const payload = { [payloadKey]: jd, companyName, jobTitle }
-      const resp = await post(endpoint, payload)
-      const blob = await resp.blob()
-      downloadBlob(blob, `${prefix}_${safeName(companyName)}.pdf`)
-      const elapsed = stopTimer(t0)
-      const score = resp.headers.get('X-JSeek-Match-Score')
-      setStatus(`Done in ${elapsed}s — PDF downloaded.${score !== null ? ` — ${score}% keyword match` : ''}`)
-      loadApplications()
-    } catch (err) {
-      stopTimer(t0)
-      setStatus(err.message, true)
-    } finally {
-      setBusy(false)
-    }
+      const resp = await post(endpoint, { [key]: jd, companyName, jobTitle })
+      downloadBlob(await resp.blob(), `${prefix}_${safeName(companyName)}.pdf`)
+      const e = stopTimer(t0); const score = resp.headers.get('X-JSeek-Match-Score')
+      setStatus(`Done in ${e}s — downloaded.${score!==null?` ${score}% match`:''}`); loadApplications()
+    } catch (err) { stopTimer(t0); setStatus(err.message, true) } finally { setBusy(false) }
   }
 
   $('btn-resume').addEventListener('click', () => runPdf('/tailor', 'jobDescription', 'Rohan_Resume'))
-  $('btn-cl').addEventListener('click', () => runPdf('/cover-letter', 'jd', 'Rohan_CL'))
-
+  $('btn-cl').addEventListener('click', async () => { await runPdf('/tailor','jobDescription','Rohan_Resume'); await new Promise(r=>setTimeout(r,1000)); await runPdf('/cover-letter','jd','Rohan_CL') })
   $('btn-msg').addEventListener('click', async () => {
-    const { jd, companyName, jobTitle } = inputs()
-    if (!jd) { setStatus('Paste a job description first.', true); return }
-    setBusy(true)
-    setStatus('Generating…')
-    const t0 = startTimer()
-    try {
-      const resp = await post('/cold-message', { jd, companyName, jobTitle })
-      const { message } = await resp.json()
-      $('message').value = message
-      $('message-wrap').style.display = 'block'
-      const elapsed = stopTimer(t0)
-      setStatus(`Done in ${elapsed}s — message ready below.`)
-    } catch (err) {
-      stopTimer(t0)
-      setStatus(err.message, true)
-    } finally {
-      setBusy(false)
-    }
+    if (!selected) return
+    const { jd, companyName, jobTitle } = jobInputs()
+    setBusy(true); setStatus('Generating message…'); const t0 = startTimer()
+    try { const { message } = await (await post('/cold-message', { jd, companyName, jobTitle })).json()
+      $('message').value = message; $('msg-wrap').style.display = 'block'; setStatus(`Done in ${stopTimer(t0)}s.`)
+    } catch (err) { stopTimer(t0); setStatus(err.message, true) } finally { setBusy(false) }
+  })
+  $('btn-email').addEventListener('click', async () => {
+    if (!selected) return
+    const { jd, companyName, jobTitle } = jobInputs()
+    setBusy(true); setStatus('Generating email…'); const t0 = startTimer()
+    try { const { subject, body } = await (await post('/cold-email', { jd, companyName, jobTitle })).json()
+      window.open(`mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`)
+      setStatus(`Done in ${stopTimer(t0)}s — email draft opened.`)
+    } catch (err) { stopTimer(t0); setStatus(err.message, true) } finally { setBusy(false) }
+  })
+  $('copy-btn').addEventListener('click', async () => { await navigator.clipboard.writeText($('message').value); $('copy-btn').textContent = 'Copied ✓'; setTimeout(()=>$('copy-btn').textContent='Copy to Clipboard',2000) })
+
+  // ── Filter chips ──
+  document.querySelectorAll('.chip[data-chip]').forEach(chip => {
+    const key = chip.dataset.chip
+    chip.addEventListener('click', e => {
+      e.stopPropagation()
+      const dd = $('dd-' + key)
+      const wasOpen = dd.classList.contains('open')
+      closeDropdowns()
+      if (!wasOpen) { dd.classList.add('open'); chip.classList.add('open') }
+    })
+    $('dd-' + key).querySelectorAll('.ditem').forEach(item => {
+      item.addEventListener('click', e => {
+        e.stopPropagation()
+        $('dd-'+key).querySelectorAll('.ditem').forEach(i => { i.classList.remove('selected'); i.querySelector('.check').textContent='' })
+        item.classList.add('selected'); item.querySelector('.check').textContent = '✓'
+        filters[key] = item.dataset.val
+        $('lbl-'+key).textContent = item.textContent.trim()
+        chip.classList.toggle('active', item.dataset.val !== 'all' && item.dataset.val !== 'any')
+        closeDropdowns(); loadJobs(true)
+      })
+    })
+  })
+  function closeDropdowns() { document.querySelectorAll('.dropdown.open').forEach(d=>d.classList.remove('open')); document.querySelectorAll('.chip.open').forEach(c=>c.classList.remove('open')) }
+  document.addEventListener('click', closeDropdowns)
+
+  $('toggle-h1b').addEventListener('click', () => { filters.h1bOnly = !filters.h1bOnly; $('toggle-h1b').classList.toggle('active', filters.h1bOnly); loadJobs(true) })
+  $('toggle-early').addEventListener('click', () => { filters.earlyOnly = !filters.earlyOnly; $('toggle-early').classList.toggle('active', filters.earlyOnly); loadJobs(true) })
+
+  let searchTimer = null
+  $('search').addEventListener('input', e => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { filters.q = e.target.value.trim(); loadJobs(true) }, 300) })
+  $('load-more-btn').addEventListener('click', () => { offset += limit; loadJobs(false) })
+
+  // ── Refresh ──
+  $('refresh-btn').addEventListener('click', async () => {
+    $('refresh-btn').disabled = true; $('refresh-icon').innerHTML = '<span class="spinner"></span>'
+    try { await fetch('/api/refresh', { method: 'POST' }); showToast('Refreshing job stream in the background…') } catch {}
+    setTimeout(async () => { await loadJobs(true); $('refresh-btn').disabled = false; $('refresh-icon').innerHTML = '' }, 6000)
   })
 
-  $('copy-btn').addEventListener('click', async () => {
-    await navigator.clipboard.writeText($('message').value)
-    $('copy-btn').textContent = 'Copied ✓'
-    setTimeout(() => { $('copy-btn').textContent = 'Copy to Clipboard' }, 2000)
-  })
+  function showToast(t) { const el = $('toast'); el.textContent = t; el.classList.add('show'); setTimeout(()=>el.classList.remove('show'), 3000) }
 
+  // ── Applications modal ──
   let allApplications = []
-
   function renderApplications() {
     const q = $('app-filter').value.trim().toLowerCase()
-    const rows = allApplications.filter(a =>
-      !q || `${a.company} ${a.title}`.toLowerCase().includes(q)
-    )
-    const tbody = $('app-table').querySelector('tbody')
-    tbody.innerHTML = ''
+    const rows = allApplications.filter(a => !q || `${a.company} ${a.title}`.toLowerCase().includes(q))
+    const tb = $('app-table').querySelector('tbody'); tb.innerHTML = ''
     for (const a of [...rows].reverse()) {
       const tr = document.createElement('tr')
-      for (const val of [a.date, a.company, a.title, a.resumePath ? '✓' : '—', a.clPath ? '✓' : '—']) {
-        const td = document.createElement('td')
-        td.textContent = val ?? ''
-        tr.appendChild(td)
-      }
-      tbody.appendChild(tr)
+      for (const v of [a.date, a.company, a.title, a.resumePath?'✓':'—', a.clPath?'✓':'—']) { const td = document.createElement('td'); td.textContent = v ?? ''; tr.appendChild(td) }
+      tb.appendChild(tr)
     }
     $('app-count').textContent = q ? `(${rows.length}/${allApplications.length})` : `(${allApplications.length})`
   }
-
-  async function loadApplications() {
-    try {
-      const resp = await fetch('/applications')
-      const data = await resp.json()
-      allApplications = data.applications ?? []
-      renderApplications()
-    } catch { /* server hiccup — leave table as-is */ }
-  }
-
+  async function loadApplications() { try { allApplications = (await (await fetch('/applications')).json()).applications ?? []; renderApplications() } catch {} }
   $('app-filter').addEventListener('input', renderApplications)
-
   $('export-csv').addEventListener('click', () => {
-    const esc = v => `"${String(v ?? '').replace(/"/g, '""')}"`
-    const csv = ['Date,Company,Title,Resume,CL']
-      .concat(allApplications.map(a => [a.date, a.company, a.title, a.resumePath ?? '', a.clPath ?? ''].map(esc).join(',')))
-      .join('\n')
-    downloadBlob(new Blob([csv], { type: 'text/csv' }), 'applications.csv')
+    const esc = v => `"${String(v??'').replace(/"/g,'""')}"`
+    const csv = ['Date,Company,Title,Resume,CL'].concat(allApplications.map(a => [a.date,a.company,a.title,a.resumePath??'',a.clPath??''].map(esc).join(','))).join('\n')
+    downloadBlob(new Blob([csv],{type:'text/csv'}), 'applications.csv')
   })
-
-  async function loadHealth() {
-    try {
-      const h = await (await fetch('/health')).json()
-      const parts = [`provider: ${h.provider}`]
-      parts.push(h.relayUp ? 'RelayFreeLLM: up' : 'RelayFreeLLM: down')
-      parts.push(h.pdflatexFound ? 'pdflatex: found' : 'pdflatex: MISSING')
-      const healthy = h.pdflatexFound && (h.provider !== 'relay' || h.relayUp)
-      $('health-line').innerHTML = `<span style="color:${healthy ? '#059669' : '#b91c1c'}">●</span> ${parts.join(' · ')}`
-    } catch { /* served by the same server, so this rarely fails */ }
-  }
 
   async function loadStats() {
     try {
       const s = await (await fetch('/stats')).json()
-      const endpoints = Object.entries(s.requests ?? {})
-      const models = Object.entries(s.models ?? {})
-      if (endpoints.length === 0 && models.length === 0) return
-      $('stats-panel').style.display = 'block'
-      const errors = endpoints.reduce((n, [, r]) => n + r.errors, 0)
-      $('stats-cards').textContent = endpoints
-        .map(([ep, r]) => `${ep}: ${r.count} runs · avg ${(r.avgTotalMs / 1000).toFixed(1)}s`)
-        .concat([`errors: ${errors}`])
-        .join('  ·  ')
-      const tbody = $('stats-models').querySelector('tbody')
-      tbody.innerHTML = ''
-      for (const [model, m] of models.sort((a, b) => b[1].success - a[1].success)) {
-        const tr = document.createElement('tr')
-        for (const val of [model, m.success, m.fail]) {
-          const td = document.createElement('td')
-          td.textContent = val
-          tr.appendChild(td)
-        }
-        tbody.appendChild(tr)
-      }
-    } catch { /* stats are best-effort */ }
+      const eps = Object.entries(s.requests ?? {}), models = Object.entries(s.models ?? {})
+      const errors = eps.reduce((n,[,r])=>n+r.errors,0)
+      $('stats-cards').textContent = eps.map(([ep,r])=>`${ep}: ${r.count} runs · avg ${(r.avgTotalMs/1000).toFixed(1)}s`).concat([`errors: ${errors}`]).join('  ·  ') || 'No requests logged yet.'
+      const tb = $('stats-models').querySelector('tbody'); tb.innerHTML = ''
+      for (const [m,v] of models.sort((a,b)=>b[1].success-a[1].success)) { const tr=document.createElement('tr'); for (const x of [m,v.success,v.fail]){const td=document.createElement('td');td.textContent=x;tr.appendChild(td)} tb.appendChild(tr) }
+    } catch {}
   }
 
-  let allJobs = []
+  $('open-apps').addEventListener('click', () => { loadApplications(); $('apps-modal').classList.add('open') })
+  $('open-stats').addEventListener('click', () => { loadStats(); $('stats-modal').classList.add('open') })
+  document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => $(b.dataset.close).classList.remove('open')))
+  document.querySelectorAll('.modal-bg').forEach(m => m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open') }))
 
-  function escHtml(str) {
-    return String(str ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-  }
-
-  function renderJobs() {
-    const q = $('job-filter').value.trim().toLowerCase()
-    const filtered = q
-      ? allJobs.filter(j => `${j.title} ${j.company} ${j.location} ${(j.tags ?? []).join(' ')}`.toLowerCase().includes(q))
-      : allJobs
-    $('stream-status').textContent = `${filtered.length} job${filtered.length === 1 ? '' : 's'}${q ? ' (filtered)' : ''}`
-    const stream = $('job-stream')
-    stream.innerHTML = ''
-    for (const job of filtered) {
-      const card = document.createElement('div')
-      card.className = 'job-card'
-      card.innerHTML = `
-        <div class="job-card-title">${escHtml(job.title)}</div>
-        <div class="job-card-company">${escHtml(job.company)}</div>
-        <div class="job-card-meta">${escHtml(job.location)}${job.remote ? ' · Remote' : ''} · ${escHtml(job.source)}</div>
-      `
-      card.addEventListener('click', () => {
-        document.querySelectorAll('.job-card.selected').forEach(c => c.classList.remove('selected'))
-        card.classList.add('selected')
-        const tmp = document.createElement('div')
-        tmp.innerHTML = job.description
-        $('jd').value = (tmp.textContent || job.description || '').trim()
-        $('company').value = job.company
-        $('title').value = job.title
-        setStatus(`Loaded "${job.title}" at ${job.company} — ready to tailor.`)
-      })
-      stream.appendChild(card)
-    }
-  }
-
-  async function loadJobs() {
-    $('stream-status').textContent = 'Loading jobs…'
-    $('refresh-jobs').disabled = true
+  // ── Health ──
+  async function loadHealth() {
     try {
-      const resp = await fetch('/api/jobs')
-      const data = await resp.json()
-      allJobs = data.jobs ?? []
-      renderJobs()
-    } catch {
-      $('stream-status').textContent = 'Failed to load jobs — is the server up?'
-    } finally {
-      $('refresh-jobs').disabled = false
-    }
+      const h = await (await fetch('/health')).json()
+      const healthy = h.pdflatexFound && (h.provider !== 'relay' || h.relayUp)
+      $('health-line').innerHTML = `<span style="color:${healthy?'var(--green)':'var(--red)'}">●</span> ${h.provider} · pdflatex ${h.pdflatexFound?'✓':'✕'}`
+    } catch {}
   }
 
-  $('job-filter').addEventListener('input', renderJobs)
-  $('refresh-jobs').addEventListener('click', loadJobs)
-
-  loadApplications()
-  loadHealth()
-  loadStats()
-  loadJobs()
+  loadHealth(); loadApplications(); loadJobs(true)
+  setInterval(loadHealth, 30000)
 </script>
 </body>
 </html>

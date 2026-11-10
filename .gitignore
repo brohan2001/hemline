@@ -4,11 +4,14 @@ resumes/*.aux
 resumes/*.log
 resumes/*.out
 .env
-resumes/Rohan_CL_*
+resumes/*_CL_*
 resumes/applied_jobs.json
 resumes/build/
 logs/
 dist/
+data/jobs_cache.json
 .DS_Store
 tests/mocks/
 *.tex.bak
+_site/
+scripts/texlive/requests.log
