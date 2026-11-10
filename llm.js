@@ -23,15 +23,15 @@ export const PROVIDERS = {
     label: 'Groq',
     keyUrl: 'https://console.groq.com/keys',
     url: 'https://api.groq.com/openai/v1/chat/completions',
-    models: ['openai/gpt-oss-120b', 'llama-3.3-70b-versatile'],
+    models: ['openai/gpt-oss-120b', 'qwen/qwen3.8-27b'],
     free: true,
   },
   cerebras: {
     label: 'Cerebras',
     keyUrl: 'https://cloud.cerebras.ai/',
     url: 'https://api.cerebras.ai/v1/chat/completions',
-    models: ['zai-glm-4.7'],
-    free: true,
+    models: ['gpt-oss-120b', 'qwen-3.8-27b'],
+    free: false,
   },
 }
 
@@ -94,6 +94,7 @@ async function callOpenAiCompatible({ provider, key, model }, prompt, { fetchImp
 export function describeError(err) {
   if (err instanceof Anthropic.AuthenticationError || err?.status === 401 || err?.status === 403) return 'invalid API key'
   if (err instanceof Anthropic.RateLimitError || err?.status === 429) return 'rate limited / quota exhausted'
+  if (err?.status === 402) return 'payment required (add billing in the provider console)'
   if (err instanceof Anthropic.APIError && err.status >= 500) return `provider error ${err.status}`
   return err?.message ?? String(err)
 }
@@ -103,11 +104,21 @@ export async function callOne(entry, prompt, deps = {}) {
     createClient: deps.createClient ?? (opts => new Anthropic(opts)),
     fetchImpl: deps.fetchImpl ?? ((...a) => fetch(...a)),
   }
-  if (!PROVIDERS[entry.provider]) throw new Error(`Unknown provider: ${entry.provider}`)
-  const model = entry.model || PROVIDERS[entry.provider].models[0]
-  return entry.provider === 'anthropic'
-    ? callAnthropic({ ...entry, model }, prompt, resolved)
-    : callOpenAiCompatible({ ...entry, model }, prompt, resolved)
+  const p = PROVIDERS[entry.provider]
+  if (!p) throw new Error(`Unknown provider: ${entry.provider}`)
+  // Saved entries keep the model chosen when the key was added; providers retire
+  // models, so an unlisted one is ignored and a 404 (model gone) tries the next.
+  const first = p.models.includes(entry.model) ? entry.model : p.models[0]
+  const models = [first, ...p.models.filter(m => m !== first)]
+  for (const [i, model] of models.entries()) {
+    try {
+      return entry.provider === 'anthropic'
+        ? await callAnthropic({ ...entry, model }, prompt, resolved)
+        : await callOpenAiCompatible({ ...entry, model }, prompt, resolved)
+    } catch (err) {
+      if (err?.status !== 404 || i === models.length - 1) throw err
+    }
+  }
 }
 
 export async function callLlm(prompt, keys, deps = {}) {

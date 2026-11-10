@@ -54,6 +54,29 @@ describe('OpenAI-compatible providers', () => {
   })
 })
 
+describe('model selection', () => {
+  it('ignores a saved model the provider no longer lists', async () => {
+    const fetchImpl = okFetch('hi')
+    await callOne({ provider: 'cerebras', key: 'c', model: 'zai-glm-4.7' }, 'p', { fetchImpl })
+    expect(JSON.parse(fetchImpl.mock.calls[0][1].body).model).toBe('gpt-oss-120b')
+  })
+
+  it('tries the next model when one is retired (404)', async () => {
+    const fetchImpl = vi.fn()
+      .mockImplementationOnce(statusFetch(404))
+      .mockImplementationOnce(okFetch('from fallback'))
+    const text = await callOne({ provider: 'groq', key: 'q' }, 'p', { fetchImpl })
+    expect(text).toBe('from fallback')
+    expect(JSON.parse(fetchImpl.mock.calls[1][1].body).model).toBe('qwen/qwen3.8-27b')
+  })
+
+  it('does not retry other models on non-404 errors', async () => {
+    const fetchImpl = statusFetch(429)
+    await expect(callOne({ provider: 'groq', key: 'q' }, 'p', { fetchImpl })).rejects.toThrow(/429/)
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('Anthropic provider', () => {
   const done = { stop_reason: 'end_turn', content: [{ type: 'thinking', thinking: '' }, { type: 'text', text: 'resume' }] }
 
